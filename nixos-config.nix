@@ -1,4 +1,4 @@
-{ name, config, pkgs, lib, inputs, ... }:
+{ options, name, config, pkgs, lib, inputs, ... }:
 let
   machine-config = lib.getAttr name {
     moxps = [
@@ -151,6 +151,15 @@ in
       };
     }
     {
+      nix.nixPath = options.nix.nixPath.default ++ 
+        # Append our nixpkgs-overlays. TODO not nice to add the full path...
+        [ "nixpkgs-overlays=/home/moritz/nixos-config/overlays-compat" ]
+      ;
+    }
+    {
+      nixpkgs.overlays = [ (import ./overlays/python-packages.nix) ];
+    }
+    {
       networking = {
         hostName = name;
     
@@ -182,6 +191,16 @@ in
       };
     
       environment.systemPackages = [ pkgs.pavucontrol ];
+    }
+    {
+      services.printing.enable = true;
+      services.printing.drivers = with pkgs; [
+        gutenprint
+        gutenprintBin
+        samsungUnifiedLinuxDriver
+        splix
+        brlaser
+      ];
     }
     {
       services.locate = {
@@ -459,7 +478,7 @@ in
         flameshot
         libreoffice
         wineWowPackages.stable
-        # winetricks
+        # winetricks  # requires p7zip (which is unsafe...)
         spotify
         gimp-with-plugins
     
@@ -566,6 +585,9 @@ in
         epc
         python-language-server
         selenium
+    
+        # camel
+        # fcsparser
       ];
       environment.variables.LD_LIBRARY_PATH = with pkgs; "$LD_LIBRARY_PATH:${stdenv.cc.cc.lib}/lib/libstdc++.so.6";
     }
@@ -576,6 +598,7 @@ in
     }
     {
       environment.systemPackages = with pkgs; [
+        nix-prefetch-git
         gitAndTools.hub
         youtube-dl
         sshfs

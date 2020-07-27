@@ -26,7 +26,7 @@ I'm a [[http://nixos.org/][NixOS]] user. What's cool about it is that I can desc
 An outline of configuration looks like this:
 
 #+begin_src nix :tangle nixos-config.nix :noweb no-export :padline no
-{ name, config, pkgs, lib, inputs, ... }:
+{ options, name, config, pkgs, lib, inputs, ... }:
 let
   machine-config = lib.getAttr name {
     moxps = [
@@ -349,6 +349,120 @@ Install ntfs-3g to mount ntfs volumes in read-write mode.
 }
 #+end_src
 
+* Overlays
+** Set compatibility layer
+https://nixos.wiki/wiki/Overlays
+Prepend default nixPath values.
+
+# TODO does this collide with [[nixos-section][this]] (<- link)?
+#+name: nixos-section
+#+begin_src nix
+{
+  nix.nixPath = options.nix.nixPath.default ++ 
+    # Append our nixpkgs-overlays. TODO not nice to add the full path...
+    [ "nixpkgs-overlays=/home/moritz/nixos-config/overlays-compat" ]
+  ;
+}
+#+end_src
+
+#+begin_src nix :tangle overlays-compat/overlays.nix :noweb no-export :padline no
+self: super:
+with super.lib;
+let
+  # Load the system config and get the `nixpkgs.overlays` option
+  overlays = (import <nixpkgs/nixos> { }).config.nixpkgs.overlays;
+in
+  # Apply all overlays to the input of the current "main" overlay
+  foldl' (flip extends) (_: super) overlays self
+
+#+end_src
+** Overlays
+#+name: nixos-section
+#+begin_src nix
+{
+  nixpkgs.overlays = [ (import ./overlays/python-packages.nix) ];
+}
+#+end_src
+
+*** Python packages
+#+begin_src nix :tangle overlays/python-packages.nix :noweb no-export :padline no
+let
+  myPythonOverride = {
+    packageOverrides = self: super: rec {
+      #fcsparser = super.callPackage ./fcsparser.nix {};
+      #camel = super.callPackage ./camel.nix {};
+      #cytoflow = super.callPackage ./cytoflow.nix {};
+    };
+  };
+in
+self: super: rec {
+
+  # https://discourse.nixos.org/t/how-to-add-custom-python-package/536/4
+  # python = super.python.override myPythonOverride;
+  # python2 = super.python2.override myPythonOverride;
+  python3 = super.python3.override myPythonOverride;
+  python37 = super.python37.override myPythonOverride;
+  python38 = super.python38.override myPythonOverride;
+
+  #pythonPackages = python.pkgs;
+  # python2Packages = python.pkgs;
+  python3Packages = python3.pkgs;
+  python37Packages = python37.pkgs;
+  python38Packages = python38.pkgs;
+}
+#+end_src
+
+#+begin_src nix :tangle overlays/fcsparser.nix :noweb no-export :padline no
+{ buildPythonPackage, fetchPypi, setuptools, six, numpy, pandas }:
+buildPythonPackage rec {
+  pname = "fcsparser";
+  version = "0.2.1";
+  propagatedBuildInputs = [ setuptools six numpy pandas ];
+  src = fetchPypi {
+    inherit pname;
+    inherit version;
+    sha256sum = "830c3f49df2e94a358bb45c5eed5c943c36529b223aab9c8e7a8870f2aba3c8d";
+  };
+}
+#+end_src
+
+
+#+begin_src nix :tangle overlays/camel.nix :noweb no-export :padline no
+{ buildPythonPackage, fetchPypi, pyyaml }:
+buildPythonPackage rec {
+  pname = "camel";
+  version = "0.1.2";
+  propagatedBuildInputs = [ pyyaml ];
+  src = fetchPypi {
+    inherit pname;
+    inherit version;
+    sha256sum = "f61080abbdd68ad40bfe4ecaee9ea34ff07344ad98d1f2041f0ccccbcf42f271";
+  };
+}
+#+end_src
+
+#+begin_src nix :tangle overlays/cytoflow.nix :noweb no-export :padline no
+{ buildPythonPackage, fetchgit, swig, numpy, pandas, matplotlib, bottleneck, numexpr, scipy, scikitlearn, seaborn, statsmodels, nbformat, traits, traitsui, pyface, envisage, dateutil, yapf, pyopengl, qt4, pyqt4 }:
+buildPythonPackage rec {
+  pname = "cytoflow";
+  version = "1.0";
+  # name = "${pname}-${version}";
+  nativeBuildInputs = [ swig ];
+  propagatedBuildInputs = [ numpy pandas matplotlib bottleneck numexpr scipy scikitlearn seaborn statsmodels nbformat fcsparser traits traitsui pyface envisage dateutil yapf pyopengl qt4 pyqt4 ];
+  # Relax version constraint
+  patchPhase = ''
+    sed -i 's/numpy==1.18.1/numpy/' setup.py
+    sed -i 's/nbformat==5.0.4/nbformat/' setup.py
+  '';
+  doCheck = false;
+  src = fetchgit {
+    url = "https://github.com/bpteague/cytoflow";
+    rev = "8515d4a0ef71940bf358ba86eb7d38b9d133d390";
+    sha256 = "13zz5r9p2yivqqdk6jnacijkq4qwgjniljynjp88cxwq5mlw1ygv";
+  };
+}
+#+end_src
+
 * Services
 ** NetworkManager
 #+name: nixos-section
@@ -401,7 +515,7 @@ Also, Pulseaudio is a requirement for Firefox Quantum.
 ** Printing
 https://nixos.wiki/wiki/Printing
 
-# #+name: nixos-section
+#+name: nixos-section
 #+begin_src nix
 {
   services.printing.enable = true;
@@ -410,6 +524,7 @@ https://nixos.wiki/wiki/Printing
     gutenprintBin
     samsungUnifiedLinuxDriver
     splix
+    brlaser
   ];
 }
 #+end_src
@@ -1452,6 +1567,9 @@ set-window-option -g automatic-rename
     epc
     python-language-server
     selenium
+
+    # camel
+    # fcsparser
   ];
   environment.variables.LD_LIBRARY_PATH = with pkgs; "$LD_LIBRARY_PATH:${stdenv.cc.cc.lib}/lib/libstdc++.so.6";
 }
@@ -1471,6 +1589,7 @@ set-window-option -g automatic-rename
 #+begin_src nix
 {
   environment.systemPackages = with pkgs; [
+    nix-prefetch-git
     gitAndTools.hub
     youtube-dl
     sshfs
