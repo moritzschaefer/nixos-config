@@ -2530,7 +2530,7 @@ I use Firefox Quantum as my default browser now.
 #+begin_src nix
 {
   environment.systemPackages = [
-    # pkgs.zathura
+    pkgs.zathura
   ];
 }
 #+end_src
@@ -2982,8 +2982,6 @@ TODO: only provide a single command for `base`
   (_self: _super: { conda = _super.conda.override { extraPkgs = [ _super.libffi_3_3 _super.libffi _super.which _super.libxcrypt ]; }; })  # this is an overlay
 #+end_src
 
-
-
 ** rxvt-unicode
 I use urxvt as my terminal emulator:
 #+name: nixos-section
@@ -3210,60 +3208,132 @@ Always push to github with ssh keys instead of login/password.
     pushInsteadOf = https://github.com/
 #+end_src
 ** tmux
+
+Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
 #+name: nixos-section
 #+begin_src nix
 {
   environment.systemPackages = [
-    pkgs.tmux
-    pkgs.python39Packages.powerline
+    pkgs.powerline
+    pkgs.python311Packages.powerline
   ];
+  programs.tmux = {
+    enable = true;
+    shortcut = "n";
+    clock24 = true;
+    # aggressiveResize = true; -- Disabled to be iTerm-friendly
+    baseIndex = 1;
+    newSession = true;
+    # Force tmux to use /tmp for sockets (WSL2 compat)
+    secureSocket = false;
+    terminal = "xterm-256color";  # seems to be the same as screen-256color
+
+    plugins = with pkgs; [
+      tmuxPlugins.better-mouse-mode
+      tmuxPlugins.jump
+      tmuxPlugins.sensible
+    ];
+
+    extraConfig = ''
+      set -ga terminal-overrides ",*256col*:Tc"
+      set -ga terminal-overrides '*:Ss=\E[%p1%d q:Se=\E[ q'
+      set-environment -g COLORTERM "truecolor"
+
+      # Mouse works as expected
+      set-option -g mouse on
+      # easy-to-remember split pane commands
+      bind | split-window -h -c "#{pane_current_path}"
+      bind - split-window -v -c "#{pane_current_path}"
+      bind c new-window -c "#{pane_current_path}"
+
+      # copied from old tmux
+      set -g bell-action none
+
+      # resize
+      bind-key -r C-j resize-pane -D 7
+      bind-key -r C-k resize-pane -U 7
+      bind-key -r C-l resize-pane -R 7
+      bind-key -r C-h resize-pane -L 7
+
+      # copy like vim
+      bind-key C-u copy-mode \; send -X halfpage-up
+      bind-key v copy-mode
+
+      bind-key -T copy-mode-vi 'v' send -X begin-selection
+      bind-key -T copy-mode-vi 'y' send -X copy-selection
+      bind-key -T copy-mode-vi 'C-d' send -X halfpage-down
+      bind-key -T copy-mode-vi 'C-u' send -X halfpage-up
+      # Vim style
+      bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "xsel -i -p && xsel -o -p | xsel -i -b"
+      bind-key -n C-v run "xsel -ob | tmux load-buffer - ; tmux paste-buffer"
+
+      # act like vim
+      setw -g mode-keys vi
+      is_vim="ps -o state= -o comm= -t '#{pane_tty}' \
+          | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|n?vim?x?)(diff)?$'"
+      # bind-key -n Left if-shell "$is_vim" "send-keys C-h"  "select-pane -L"
+      # bind-key -n Down if-shell "$is_vim" "send-keys C-j"  "select-pane -D"
+      # bind-key -n Up if-shell "$is_vim" "send-keys C-k"  "select-pane -U"
+      # bind-key -n Right if-shell "$is_vim" "send-keys C-l"  "select-pane -R"
+      # bind-key -n C-h if-shell "$is_vim" "send-keys C-h"  "select-pane -L"
+      # bind-key -n C-j if-shell "$is_vim" "send-keys C-j"  "select-pane -D"
+      # bind-key -n C-k if-shell "$is_vim" "send-keys C-k"  "select-pane -U"
+      # bind-key -n C-l if-shell "$is_vim" "send-keys C-l"  "select-pane -R"
+      # bind-key -n C-\ if-shell "$is_vim" "send-keys C-\\" "select-pane -l"
+
+
+      # start window numbers at 1 to match keyboard order with tmux window order
+      set -g base-index 1
+      set-window-option -g pane-base-index 1
+
+      # renumber windows sequentially after closing any of them
+      set -g renumber-windows on
+
+      # soften status bar color from harsh green to light gray
+      set -g status-bg '#666666'
+      set -g status-fg '#aaaaaa'
+
+      # remove administrative debris (session name, hostname, time) in status bar
+      set -g status-left ""
+      set -g status-right ""
+
+      # TODO what are these doing?
+      set -g prefix2 none
+      # prefix -> back-one-character
+      bind-key C-b send-prefix
+      # prefix-2 -> forward-incremental-history-search
+      bind-key C-s send-prefix -2
+
+      # don't suspend-client
+      unbind-key C-z
+
+      # don't kill tab on d
+      unbind-key C-d
+
+      # need to redefine next
+      bind n next-window
+
+      set-option -g default-shell $SHELL
+
+      # reload config
+      bind-key r source-file ~/.tmux.conf \; \
+            display-message "source-file done"
+
+      # Local config
+      if-shell "[ -f ~/.tmux.conf.local ]" 'source ~/.tmux.conf.local'
+
+      ## set the default TERM
+
+      ## update the TERM variable of terminal emulator when creating a new session or attaching a existing session
+      set -g update-environment 'DISPLAY SSH_ASKPASS SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY TERM'
+
+      source-file /run/current-system/sw/lib/python3.11/site-packages/powerline/bindings/tmux/powerline.conf
+    '';
+  };
+
 }
 #+end_src
 
-Use =C-a= as a prefix.
-#+begin_src conf-space :tangle .tmux.conf :padline no
-set -g prefix C-a
-unbind-key C-b
-bind-key C-a send-prefix
-
-#+end_src
-
-Move windows (tabs) around. Stealed from [[https://til.hashrocket.com/posts/6vz1uo5bxv-move-window-tab-in-tmux][here]].
-
-#+begin_src conf-space :tangle .tmux.conf
-bind-key S-left swap-window -t -1
-bind-key S-right swap-window -t +1
-#+end_src
-
-
-/TODO describe other settings/
-#+begin_src conf-space :tangle .tmux.conf
-# To make vim work properly
-set -g default-terminal "screen-256color"
-
-set -g status-keys vi
-setw -g mode-keys vi
-
-set -g history-limit 10000
-
-# Start numbering from 1
-set -g base-index 1
-
-# Allows for faster key repetition
-set -s escape-time 0
-
-bind h select-pane -L
-bind j select-pane -D
-bind k select-pane -U
-bind l select-pane -R
-
-bind-key s split-window
-bind-key v split-window -h
-
-bind r source-file ~/.tmux.conf \; display-message "Config reloaded..."
-
-set-window-option -g automatic-rename
-#+end_src
 ** R language
 
 #+name: flake-overlays
@@ -4102,7 +4172,6 @@ set-window-option -g automatic-rename
   environment.systemPackages = with pkgs; [
     cookiecutter
     nix-index
-    tmux
     # gpu-burn
     gdrive
     tldr
@@ -4176,58 +4245,6 @@ This install a number of default man pages for the linux/posix system.
     pkgs.stdmanpages
     ];
 }
-#+end_src
-* Meta
-** Setup
-
-There is a =setup.sh= script in this directory. It just links all files to =$HOME=:
-#+begin_src sh :shebang "#!/bin/sh" :tangle setup.sh :padline no
-FILES=".vimrc .vim .nvimrc .nvim .gitconfig .zshrc .zsh .tmux.conf .Xresources .config/awesome .config/nvim .nethackrc .emacs.d .ssh bin .config/zathura .irssi .config/xkb .config/fish .msmtprc .notmuch-config .mbsyncrc .config/nixpkgs"
-
-DEST=$1
-
-if [ -z "$DEST" ]; then
-    DEST="$HOME"
-fi
-
-BASE=$(cd "$(dirname "$0")" && pwd)
-
-ask_install() {
-    FILENAME=$1
-
-    LINK="$DEST/$FILENAME"
-    TARGET="$BASE/$FILENAME"
-
-    if [ -e $LINK ]; then
-        echo "$LINK exists. Skipping..."
-    else
-        read -r -p "Link $LINK to $TARGET? [y/N] " response
-        case $response in
-            [yY][eE][sS]|[yY])
-                ln -v -s "$TARGET" "$LINK"
-                ;;
-        esac
-    fi
-}
-
-for FILE in $FILES; do
-    ask_install $FILE
-done
-#+end_src
-
-*** Install fisherman
-[[https://github.com/fisherman/fisherman][Fisherman]] is a plugin manager for fish.
-#+begin_src sh :tangle setup.sh
-if [ ! -e "$DEST/.config/fish/functions/fisher.fish" ]; then
-    read -r -p "Install fisherman and all plugins? [y/N] " response
-    case $response in
-        [yY][eE][sS]|[yY])
-            curl -Lo "$DEST/.config/fish/functions/fisher.fish" --create-dirs \
-                https://raw.githubusercontent.com/fisherman/fisherman/master/fisher.fish
-            fish -c fisher
-            ;;
-    esac
-fi
 #+end_src
 * Homeserver
 ** Networking
