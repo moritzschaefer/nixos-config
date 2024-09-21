@@ -1120,6 +1120,12 @@ Clickpad and DPI:
       options = [ "fmask=0022" "dmask=0022" ];
     };
 
+  fileSystems."/mnt/data" =
+    { device = "/dev/disk/by-uuid/66EC-4934";
+      fsType = "exfat";
+      options = [ "nofail" ];
+    };
+
   swapDevices = [ ];
 
   # # backlight control
