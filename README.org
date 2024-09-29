@@ -2944,20 +2944,105 @@ Start emacs as a daemon:
 }
 #+end_src
 
-** Conda
+** Micromamba (Conda)
+#+name: nixos-section
+#+begin_src nix
+{
+  environment.systemPackages = with pkgs; [
+    (pkgs.buildFHSUserEnv {
+      name = "micromamba-fhs";
 
-TODO: only provide a single command for `base`
+      targetPkgs = pkgs: [
+        pkgs.micromamba
+        # Add other packages if needed
+        (pkgs.stdenv.mkDerivation {  # for fish conda initialization
+            name = "conda-config-files";
+            buildCommand = ''
+              mkdir -p $out/etc/fish
+              mkdir -p $out/etc/conda
+              cp $fishrc $out/etc/fish/config.fish
+              cp $basecondaenv $out/etc/conda/base.yaml
+              cp $bashrc $out/etc/bashrc.local  # bashrc.local is automatically called by /etc/bashrc
+            '';
+            bashrc = pkgs.writeTextFile {
+              name = "bashrc-file";
+              text = ''
+                eval "$(micromamba shell hook --shell=posix)"
+                micromamba activate  # needed, because in the `profile` script the env does not propagate :|
+              '';
+            };
+            fishrc = pkgs.writeTextFile {
+              name = "fishrc-file";
+              text = ''
+                eval "$(micromamba shell hook --shell=fish)"
+                micromamba activate  # needed, because in the `profile` script the env does not propagate :|
+              '';
+            };
+            basecondaenv = pkgs.writeTextFile {
+              name = "base-conda-env";
+              text = ''
+                name: base
+                channels:
+                  - conda-forge
+                  - bioconda
+                  - nodefaults
+                dependencies:
+                  - conda
+                  - python=3.12
+                  - mamba
+                  - virtualenv
+                  - ca-certificates
+                  - certifi
+                  - openssl
+                  - openh264
+                  - argcomplete
+                  - snakemake
+                  - openpyxl
+                  - samtools
+                  - pyreadstat
+                  - conda-libmamba-solver
+                  - ipdb
+                  - nb_conda_kernels
+                  - libmamba
+                  - notebook
+                  - ipywidgets
+                  - seaborn
+                  - matplotlib
+                  - ipython
+                prefix: /home/moritz/.mamba
+              '';
+            };
+        })
+      ];
+
+      profile = ''
+        set -e
+        eval "$(micromamba shell hook --shell=posix)"
+        export MAMBA_ROOT_PREFIX=/home/moritz/.mamba  # alternative: ${builtins.getEnv "PWD"}/.mamba
+        if ! test -d $MAMBA_ROOT_PREFIX; then
+            micromamba create --yes -q -n base
+            micromamba activate base
+            micromamba install --yes -f /etc/conda/base.yaml
+        fi
+        set +e
+      '';
+
+      runScript = "fish";
+    })
+  ];
+}
+#+end_src
 
 #+name: nixos-section
 #+begin_src nix
 {
   environment.systemPackages =
-    let conda_shell_kernel_commands = pkgs.writeScript "guided_environment" ''
+    let mamba_shell_kernel_commands = pkgs.writeScript "mamba_environment" ''
       #!${pkgs.stdenv.shell}
-      conda activate base
+      micromamba activate base
 
-      LOG=/tmp/guided_environ_kernel_output
-      SYMLINK=/tmp/guided_protein_diffusion_kernel.json
+      set LOG /tmp/mamba_environ_kernel_output
+      set SYMLINK /tmp/mamba_kernel.json
       if [ -L $SYMLINK ]; then
         echo "Warning: Removing symlink to old kernel."
         rm $SYMLINK
@@ -2966,7 +3051,7 @@ TODO: only provide a single command for `base`
       # Redirect the output of the first command to the named pipe and run it in the background
       jupyter kernel --kernel=python 2> $LOG &
 
-      PATTERN='/[.a-z0-9/\-]\+.json'
+      set PATTERN '/[.a-z0-9/\-]\+.json'
       while ! grep -q "$PATTERN" $LOG; do sleep 0.2; done
       target=$(grep -o $PATTERN $LOG)
       echo $target
@@ -2975,29 +3060,29 @@ TODO: only provide a single command for `base`
       wait
       rm $SYMLINK
     '';
-    conda_command = pkgs.writeScript "guided_environment" ''
+    mamba_command = pkgs.writeScript "mamba_environment" ''
       #!${pkgs.stdenv.shell}
-      conda "$@"
+      micromamba "$argv"
     '';
-    conda_shell_protenv_cmd = pkgs.writeScript "guided_environment" ''
+    mamba_shell_cmd = pkgs.writeScript "mamba_environment" ''
       #!${pkgs.stdenv.shell}
-      conda activate base
-      "$@"
+      micromamba activate base
+      $argv
     '';
-    kernel_wrapper = pkgs.writeShellScriptBin "guided_prot_diff_kernel" ''
-      /run/current-system/sw/bin/conda-shell ${conda_shell_kernel_commands}
-    '';  # TODO conda-shell should be provided via a nix variable
-    conda_wrapper = pkgs.writeShellScriptBin "conda" ''
-      /run/current-system/sw/bin/conda-shell ${conda_command} "$@"
-    '';  # TODO conda-shell should be provided via a nix variable
-    repl_wrapper = pkgs.writeShellScriptBin "guided_prot_diff_repl" ''
-      /run/current-system/sw/bin/conda-shell ${conda_shell_protenv_cmd} "python" "$@"
-    '';  # TODO conda-shell should be provided via a nix variable
-    cmd_wrapper = pkgs.writeShellScriptBin "guided_prot_diff_cmd" ''
-      /run/current-system/sw/bin/conda-shell ${conda_shell_protenv_cmd} "$@"
-    ''; # TODO conda-shell should be provided via a nix variable
+    kernel_wrapper = pkgs.writeShellScriptBin "mamba_kernel" ''
+      /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_kernel_commands}
+    '';  # TODO mamba-shell should be provided via a nix variable
+    mamba_wrapper = pkgs.writeShellScriptBin "mamba" ''
+      /run/current-system/sw/bin/micromamba-fhs ${mamba_command} "$@"
+    '';  # TODO mamba-shell should be provided via a nix variable
+    repl_wrapper = pkgs.writeShellScriptBin "mamba_repl" ''
+      /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "python" "$@"
+    '';  # TODO mamba-shell should be provided via a nix variable
+    cmd_wrapper = pkgs.writeShellScriptBin "mamba_cmd" ''
+      /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "$@"
+    ''; # TODO mamba-shell should be provided via a nix variable
   in [
-    pkgs.conda kernel_wrapper repl_wrapper cmd_wrapper conda_wrapper
+    pkgs.mamba kernel_wrapper repl_wrapper cmd_wrapper mamba_wrapper
   ];
 }
 #+end_src
