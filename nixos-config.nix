@@ -734,8 +734,31 @@ let
         # The NixOS release to be compatible with for stateful data such as databases.
         system.stateVersion = "20.03";
       }
-      
-      
+      {
+        # TODO the keyboard is not fixed in the right manner (in browsers, alt and enter lead to the original keypresses...)
+        services.xserver.displayManager.sessionCommands = let
+          myCustomLayout = pkgs.writeText "xkb-layout" ''
+          keycode 36 = ISO_Level3_Shift
+          '';
+        in
+           ''
+            ${pkgs.xorg.xmodmap}/bin/xmodmap ${myCustomLayout}"
+            xsetroot -cursor_name left_ptr
+          '';
+      }
+      {
+        services.xserver.displayManager.lightdm.greeters.gtk.cursorTheme = {
+          name = "Vanilla-DMZ";
+          package = pkgs.vanilla-dmz;
+          size = 64; # was 64
+        };
+        xsession.pointerCursor = {
+            package = pkgs.vanilla-dmz; # pkgs.gnome.adwaita-icon-theme;
+            name = "Vanilla-DMZ";
+            size = 64;
+        };
+        environment.variables.XCURSOR_SIZE = "64";
+      }
       {
         systemd.services.gdrive_mount = let mountdir = "/mnt/gdrive"; in {
           description = "mount gdrive dirs";
@@ -816,9 +839,10 @@ let
           enable = true;
           systemCronJobs = [
             # Add new files to wiki
-            "0 0 * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/; ${pkgs.git}/bin/git add .; ${pkgs.git}/bin/git commit -m \"Weekly checkpoint\"' >> /tmp/git_out 2>&1"
-            # Download paperpile citations
-            "* * * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/papers; wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb' >> download_paperpile_log 2>&1"
+            "0 10 * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/; ${pkgs.git}/bin/git add .; ${pkgs.git}/bin/git commit -m \"Weekly checkpoint\"' >> /tmp/git_out 2>&1"
+            # Download paperpile citations (once a day)
+            "0 * * * *      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/papers; wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb' >> download_paperpile_log 2>&1"
+            
           ];
         };
       }
@@ -924,6 +948,12 @@ let
             options = [ "fmask=0022" "dmask=0022" ];
           };
       
+        fileSystems."/mnt/data" =
+          { device = "/dev/disk/by-uuid/66EC-4934";
+            fsType = "exfat";
+            options = [ "nofail" "uid=1000" "gid=100" "umask=0022" ];
+          };
+      
         swapDevices = [ ];
       
         # # backlight control
@@ -985,8 +1015,17 @@ let
         # For more information, see `man configuration.nix` or https://nixos.org/manual/nixos/stable/options#opt-system.stateVersion .
         system.stateVersion = "24.11"; # Do not change!
       }
-      
-      
+      {
+        services.xserver.displayManager.sessionCommands = ''
+          xsetroot -cursor_name left_ptr
+        '';
+      }
+      {
+        services.udev.extraRules = ''
+          KERNEL=="macsmc-battery", SUBSYSTEM=="power_supply", ATTR{charge_control_end_threshold}="95"
+        '';
+        # , ATTR{charge_control_start_threshold}="70" only charge below 70 <- nope :)
+      }
       {
         services.xserver.xkb.options= "lv5:rwin_switch_lock,terminate:ctrl_alt_bksp";
       }
@@ -1286,7 +1325,7 @@ in
       #   enable = true;
       # };
       environment.systemPackages = [
-        pkgs.onedrivegui
+        pkgs.unstable.onedrivegui
       ];
     }
     {
@@ -1394,7 +1433,7 @@ in
         windowManager = {
           exwm = {
             enable = true;
-            
+    
             extraPackages = epkgs: with epkgs; [ emacsql-sqlite pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
             # I only managed to compile emacs-zmq once (~/emacs.d/elpa/27.1/develop/zmq-.../emacs-zmq.so). I just copied it from there to mobook
             enableDefaultConfig = false;  # todo disable and enable loadScript
@@ -1597,7 +1636,7 @@ in
     }
     {
       environment.systemPackages = [
-        # pkgs.zathura
+        pkgs.zathura
       ];
     }
     {
@@ -1794,13 +1833,97 @@ in
       environment.systemPackages = [ pkgs.qmk ];  # TODO might need unstable
     }
     {
-      environment.systemPackages =
-        let conda_shell_kernel_commands = pkgs.writeScript "guided_environment" ''
-          #!${pkgs.stdenv.shell}
-          conda activate base
+      environment.systemPackages = with pkgs; [
+        (pkgs.buildFHSUserEnv {
+          name = "micromamba-fhs";
     
-          LOG=/tmp/guided_environ_kernel_output
-          SYMLINK=/tmp/guided_protein_diffusion_kernel.json
+          targetPkgs = pkgs: [
+            pkgs.micromamba
+            # Add other packages if needed
+            (pkgs.stdenv.mkDerivation {  # for fish conda initialization
+                name = "conda-config-files";
+                buildCommand = ''
+                  mkdir -p $out/etc/fish
+                  mkdir -p $out/etc/conda
+                  cp $fishrc $out/etc/fish/config.fish
+                  cp $basecondaenv $out/etc/conda/base.yaml
+                  cp $bashrc $out/etc/bashrc.local  # bashrc.local is automatically called by /etc/bashrc
+                '';
+                bashrc = pkgs.writeTextFile {
+                  name = "bashrc-file";
+                  text = ''
+                    eval "$(micromamba shell hook --shell=posix)"
+                    micromamba activate  # needed, because in the `profile` script the env does not propagate :|
+                  '';
+                };
+                fishrc = pkgs.writeTextFile {
+                  name = "fishrc-file";
+                  text = ''
+                    eval "$(micromamba shell hook --shell=fish)"
+                    micromamba activate  # needed, because in the `profile` script the env does not propagate :|
+                  '';
+                };
+                basecondaenv = pkgs.writeTextFile {
+                  name = "base-conda-env";
+                  text = ''
+                    name: base
+                    channels:
+                      - conda-forge
+                      - bioconda
+                      - defaults
+                    dependencies:
+                      - conda
+                      - python=3.12
+                      - mamba
+                      - virtualenv
+                      - ca-certificates
+                      - certifi
+                      - openssl
+                      - openh264
+                      - argcomplete
+                      - snakemake
+                      - openpyxl
+                      - samtools
+                      - pyreadstat
+                      - conda-libmamba-solver
+                      - ipdb
+                      - nb_conda_kernels
+                      - libmamba
+                      - notebook
+                      - ipywidgets
+                      - seaborn
+                      - matplotlib
+                      - ipython
+                    prefix: /home/moritz/.mamba
+                  '';
+                };
+            })
+          ];
+    
+          profile = ''
+            set -e
+            eval "$(micromamba shell hook --shell=posix)"
+            export MAMBA_ROOT_PREFIX=/home/moritz/.mamba  # alternative: ${builtins.getEnv "PWD"}/.mamba
+            if ! test -d $MAMBA_ROOT_PREFIX; then
+                micromamba create --yes -q -n base
+                micromamba activate base
+                micromamba install --yes -f /etc/conda/base.yaml
+            fi
+            set +e
+          '';
+    
+          runScript = "fish";
+        })
+      ];
+    }
+    {
+      environment.systemPackages =
+        let mamba_shell_kernel_commands = pkgs.writeScript "mamba_environment" ''
+          #!${pkgs.stdenv.shell}
+          micromamba activate base
+    
+          set LOG /tmp/mamba_environ_kernel_output
+          set SYMLINK /tmp/mamba_kernel.json
           if [ -L $SYMLINK ]; then
             echo "Warning: Removing symlink to old kernel."
             rm $SYMLINK
@@ -1809,7 +1932,7 @@ in
           # Redirect the output of the first command to the named pipe and run it in the background
           jupyter kernel --kernel=python 2> $LOG &
     
-          PATTERN='/[.a-z0-9/\-]\+.json'
+          set PATTERN '/[.a-z0-9/\-]\+.json'
           while ! grep -q "$PATTERN" $LOG; do sleep 0.2; done
           target=$(grep -o $PATTERN $LOG)
           echo $target
@@ -1818,29 +1941,29 @@ in
           wait
           rm $SYMLINK
         '';
-        conda_command = pkgs.writeScript "guided_environment" ''
+        mamba_command = pkgs.writeScript "mamba_environment" ''
           #!${pkgs.stdenv.shell}
-          conda "$@"
+          micromamba "$argv"
         '';
-        conda_shell_protenv_cmd = pkgs.writeScript "guided_environment" ''
+        mamba_shell_cmd = pkgs.writeScript "mamba_environment" ''
           #!${pkgs.stdenv.shell}
-          conda activate base
-          "$@"
+          micromamba activate base
+          $argv
         '';
-        kernel_wrapper = pkgs.writeShellScriptBin "guided_prot_diff_kernel" ''
-          /run/current-system/sw/bin/conda-shell ${conda_shell_kernel_commands}
-        '';  # TODO conda-shell should be provided via a nix variable
-        conda_wrapper = pkgs.writeShellScriptBin "conda" ''
-          /run/current-system/sw/bin/conda-shell ${conda_command} "$@"
-        '';  # TODO conda-shell should be provided via a nix variable
-        repl_wrapper = pkgs.writeShellScriptBin "guided_prot_diff_repl" ''
-          /run/current-system/sw/bin/conda-shell ${conda_shell_protenv_cmd} "python" "$@"
-        '';  # TODO conda-shell should be provided via a nix variable
-        cmd_wrapper = pkgs.writeShellScriptBin "guided_prot_diff_cmd" ''
-          /run/current-system/sw/bin/conda-shell ${conda_shell_protenv_cmd} "$@"
-        ''; # TODO conda-shell should be provided via a nix variable
+        kernel_wrapper = pkgs.writeShellScriptBin "mamba_kernel" ''
+          /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_kernel_commands}
+        '';  # TODO mamba-shell should be provided via a nix variable
+        mamba_wrapper = pkgs.writeShellScriptBin "mamba" ''
+          /run/current-system/sw/bin/micromamba-fhs ${mamba_command} "$@"
+        '';  # TODO mamba-shell should be provided via a nix variable
+        repl_wrapper = pkgs.writeShellScriptBin "mamba_repl" ''
+          /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "python" "$@"
+        '';  # TODO mamba-shell should be provided via a nix variable
+        cmd_wrapper = pkgs.writeShellScriptBin "mamba_cmd" ''
+          /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "$@"
+        ''; # TODO mamba-shell should be provided via a nix variable
       in [
-        pkgs.conda kernel_wrapper repl_wrapper cmd_wrapper conda_wrapper
+        pkgs.mamba kernel_wrapper repl_wrapper cmd_wrapper mamba_wrapper
       ];
     }
     {
@@ -1880,9 +2003,122 @@ in
     }
     {
       environment.systemPackages = [
-        pkgs.tmux
-        pkgs.python39Packages.powerline
+        pkgs.powerline
+        pkgs.python311Packages.powerline
       ];
+      programs.tmux = {
+        enable = true;
+        shortcut = "n";
+        clock24 = true;
+        # aggressiveResize = true; -- Disabled to be iTerm-friendly
+        baseIndex = 1;
+        newSession = true;
+        # Force tmux to use /tmp for sockets (WSL2 compat)
+        secureSocket = false;
+        terminal = "xterm-256color";  # seems to be the same as screen-256color
+    
+        plugins = with pkgs; [
+          tmuxPlugins.better-mouse-mode
+          tmuxPlugins.jump
+          tmuxPlugins.sensible
+        ];
+    
+        extraConfig = ''
+          set -ga terminal-overrides ",*256col*:Tc"
+          set -ga terminal-overrides '*:Ss=\E[%p1%d q:Se=\E[ q'
+          set-environment -g COLORTERM "truecolor"
+    
+          # Mouse works as expected
+          set-option -g mouse on
+          # easy-to-remember split pane commands
+          bind | split-window -h -c "#{pane_current_path}"
+          bind - split-window -v -c "#{pane_current_path}"
+          bind c new-window
+    
+          # copied from old tmux
+          set -g bell-action none
+    
+          # resize
+          bind-key -r C-j resize-pane -D 7
+          bind-key -r C-k resize-pane -U 7
+          bind-key -r C-l resize-pane -R 7
+          bind-key -r C-h resize-pane -L 7
+    
+          # copy like vim
+          bind-key C-u copy-mode \; send -X halfpage-up
+          bind-key v copy-mode
+    
+          bind-key -T copy-mode-vi 'v' send -X begin-selection
+          bind-key -T copy-mode-vi 'y' send -X copy-selection
+          bind-key -T copy-mode-vi 'C-d' send -X halfpage-down
+          bind-key -T copy-mode-vi 'C-u' send -X halfpage-up
+          # Vim style
+          bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "xsel -i -p && xsel -o -p | xsel -i -b"
+          bind-key -n C-v run "xsel -ob | tmux load-buffer - ; tmux paste-buffer"
+    
+          # act like vim
+          setw -g mode-keys vi
+          is_vim="ps -o state= -o comm= -t '#{pane_tty}' \
+              | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|n?vim?x?)(diff)?$'"
+          # bind-key -n Left if-shell "$is_vim" "send-keys C-h"  "select-pane -L"
+          # bind-key -n Down if-shell "$is_vim" "send-keys C-j"  "select-pane -D"
+          # bind-key -n Up if-shell "$is_vim" "send-keys C-k"  "select-pane -U"
+          # bind-key -n Right if-shell "$is_vim" "send-keys C-l"  "select-pane -R"
+          # bind-key -n C-h if-shell "$is_vim" "send-keys C-h"  "select-pane -L"
+          # bind-key -n C-j if-shell "$is_vim" "send-keys C-j"  "select-pane -D"
+          # bind-key -n C-k if-shell "$is_vim" "send-keys C-k"  "select-pane -U"
+          # bind-key -n C-l if-shell "$is_vim" "send-keys C-l"  "select-pane -R"
+          # bind-key -n C-\ if-shell "$is_vim" "send-keys C-\\" "select-pane -l"
+    
+          # start window numbers at 1 to match keyboard order with tmux window order
+          set -g base-index 1
+          set-window-option -g pane-base-index 1
+    
+          # renumber windows sequentially after closing any of them
+          set -g renumber-windows on
+    
+          # soften status bar color from harsh green to light gray
+          set -g status-bg '#666666'
+          set -g status-fg '#aaaaaa'
+    
+          # remove administrative debris (session name, hostname, time) in status bar
+          set -g status-left ""
+          set -g status-right ""
+    
+          # TODO what are these doing?
+          set -g prefix2 none
+          # prefix -> back-one-character
+          bind-key C-b send-prefix
+          # prefix-2 -> forward-incremental-history-search
+          bind-key C-s send-prefix -2
+    
+          # don't suspend-client
+          unbind-key C-z
+    
+          # don't kill tab on d
+          unbind-key C-d
+    
+          # need to redefine next
+          bind n next-window
+    
+          set-option -g default-shell $SHELL
+    
+          # reload config
+          bind-key r source-file ~/.tmux.conf \; \
+                display-message "source-file done"
+    
+          # Local config
+          if-shell "[ -f ~/.tmux.conf.local ]" 'source ~/.tmux.conf.local'
+    
+          ## set the default TERM
+    
+          ## update the TERM variable of terminal emulator when creating a new session or attaching a existing session
+          set -g update-environment 'DISPLAY SSH_ASKPASS SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY TERM'
+    
+          source-file /run/current-system/sw/lib/python3.11/site-packages/powerline/bindings/tmux/powerline.conf
+        '';
+      };
+    
     }
     {
       environment.systemPackages =
@@ -2011,6 +2247,8 @@ in
         pkg-config
         autoconf
         clang-tools
+        automake
+        autoconf-archive
       ];
     }
     {
@@ -2079,7 +2317,6 @@ in
       environment.systemPackages = with pkgs; [
         cookiecutter
         nix-index
-        tmux
         # gpu-burn
         gdrive
         tldr

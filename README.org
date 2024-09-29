@@ -873,21 +873,22 @@ Keyboard:
 
 https://nixos.wiki/wiki/Keyboard_Layout_Customization#Using_xmodmap
 
+# TODO maybe extend to moair
 #+name: machine-mopad
 #+begin_src nix
 {
   # TODO the keyboard is not fixed in the right manner (in browsers, alt and enter lead to the original keypresses...)
-  let
+  services.xserver.displayManager.sessionCommands = let
     myCustomLayout = pkgs.writeText "xkb-layout" ''
     keycode 36 = ISO_Level3_Shift
     '';
   in
-    services.xserver.displayManager.sessionCommands = ''
+     ''
       ${pkgs.xorg.xmodmap}/bin/xmodmap ${myCustomLayout}"
       xsetroot -cursor_name left_ptr
     '';
 }
-#+end_src nix
+#+end_src
 
 Cursor
 related: https://discourse.nixos.org/t/how-to-fix-cursor-size/2938
@@ -907,7 +908,7 @@ related: https://discourse.nixos.org/t/how-to-fix-cursor-size/2938
   };
   environment.variables.XCURSOR_SIZE = "64";
 }
-#+end_src nix
+#+end_src
 
 **** Alternative way to fix enter key -> iso_level3
 as described in https://nixos.wiki/wiki/Keyboard_Layout_Customization I could also add the following xkb code, but how?
@@ -1123,7 +1124,7 @@ Clickpad and DPI:
   fileSystems."/mnt/data" =
     { device = "/dev/disk/by-uuid/66EC-4934";
       fsType = "exfat";
-      options = [ "nofail" ];
+      options = [ "nofail" "uid=1000" "gid=100" "umask=0022" ];
     };
 
   swapDevices = [ ];
@@ -1198,7 +1199,7 @@ Cursor
     xsetroot -cursor_name left_ptr
   '';
 }
-#+end_src nix
+#+end_src
 
 related: https://discourse.nixos.org/t/how-to-fix-cursor-size/2938
 
@@ -1211,13 +1212,26 @@ related: https://discourse.nixos.org/t/how-to-fix-cursor-size/2938
     size = 64; # was 64
   };
   xsession.pointerCursor = {
-      package = pkgs.vanilla-dmz; # pkgs.gnome.adwaita-icon-theme;
-      name = "Vanilla-DMZ";
-      size = 64;
+    package = pkgs.vanilla-dmz; # pkgs.gnome.adwaita-icon-theme;
+    name = "Vanilla-DMZ";
+    size = 64;
   };
   environment.variables.XCURSOR_SIZE = "64";
 }
-#+end_src nix
+#+end_src
+
+Battery limitation (to save battery live)
+
+#+name: machine-moair
+#+begin_src nix
+{
+  services.udev.extraRules = ''
+    KERNEL=="macsmc-battery", SUBSYSTEM=="power_supply", ATTR{charge_control_end_threshold}="95"
+  '';
+  # , ATTR{charge_control_start_threshold}="70" only charge below 70 <- nope :)
+}
+#+end_src
+
 
 ** Local packages
 As a responsible NixOS user, I refuse to install software blindly with =sudo make install=. That's why I must write my own nix-expressions.
@@ -1648,7 +1662,7 @@ I use OneDrive from my job
   #   enable = true;
   # };
   environment.systemPackages = [
-    pkgs.onedrivegui
+    pkgs.unstable.onedrivegui
   ];
 }
 #+end_src
@@ -1813,7 +1827,11 @@ Automatic USB stick mounting
 #+end_src
 
 ** Cron
-#+name: machine-mopad
+
+# need to first modify the mask to 0644
+# also need to check whether the paperpile command works
+
+#+name: machine-moair-TODO
 #+begin_src nix
 {
   # Enable cron service
@@ -1821,9 +1839,10 @@ Automatic USB stick mounting
     enable = true;
     systemCronJobs = [
       # Add new files to wiki
-      "0 0 * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/; ${pkgs.git}/bin/git add .; ${pkgs.git}/bin/git commit -m \"Weekly checkpoint\"' >> /tmp/git_out 2>&1"
-      # Download paperpile citations
-      "* * * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/papers; wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb' >> download_paperpile_log 2>&1"
+      "0 10 * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/; ${pkgs.git}/bin/git add .; ${pkgs.git}/bin/git commit -m \"Weekly checkpoint\"' >> /tmp/git_out 2>&1"
+      # Download paperpile citations (once a day)
+      "0 * * * *      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/papers; wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb' >> download_paperpile_log 2>&1"
+
     ];
   };
 }
@@ -2101,7 +2120,7 @@ I needed to hack this to emacs29, because emacs28 failed with my org-mode config
     windowManager = {
       exwm = {
         enable = true;
-        
+
         extraPackages = epkgs: with epkgs; [ emacsql-sqlite pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
         # I only managed to compile emacs-zmq once (~/emacs.d/elpa/27.1/develop/zmq-.../emacs-zmq.so). I just copied it from there to mobook
         enableDefaultConfig = false;  # todo disable and enable loadScript
@@ -3250,7 +3269,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       # easy-to-remember split pane commands
       bind | split-window -h -c "#{pane_current_path}"
       bind - split-window -v -c "#{pane_current_path}"
-      bind c new-window -c "#{pane_current_path}"
+      bind c new-window
 
       # copied from old tmux
       set -g bell-action none
@@ -3286,7 +3305,6 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       # bind-key -n C-k if-shell "$is_vim" "send-keys C-k"  "select-pane -U"
       # bind-key -n C-l if-shell "$is_vim" "send-keys C-l"  "select-pane -R"
       # bind-key -n C-\ if-shell "$is_vim" "send-keys C-\\" "select-pane -l"
-
 
       # start window numbers at 1 to match keyboard order with tmux window order
       set -g base-index 1
@@ -4092,6 +4110,8 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
     pkg-config
     autoconf
     clang-tools
+    automake
+    autoconf-archive
   ];
 }
 #+end_src
