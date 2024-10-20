@@ -1828,22 +1828,49 @@ Automatic USB stick mounting
 
 ** Cron
 
-# need to first modify the mask to 0644
-# also need to check whether the paperpile command works
-
-#+name: machine-moair-TODO
+#+name: machine-moair
 #+begin_src nix
 {
-  # Enable cron service
-  services.cron = {
-    enable = true;
-    systemCronJobs = [
-      # Add new files to wiki
-      "0 10 * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/; ${pkgs.git}/bin/git add .; ${pkgs.git}/bin/git commit -m \"Weekly checkpoint\"' >> /tmp/git_out 2>&1"
-      # Download paperpile citations (once a day)
-      "0 * * * *      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/papers; wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb' >> download_paperpile_log 2>&1"
+  systemd.services."weekly-git-commit" = {
+    script = ''
+      set -ev
+      cd /home/moritz/wiki/
+      export PATH=$PATH:${pkgs.git-lfs}/bin
+      ${pkgs.git}/bin/git add .
+      ${pkgs.git}/bin/git commit -m "Weekly checkpoint"
+    '';
+    serviceConfig = {
+      Type = "oneshot";
+      User = "moritz";
+    };
+  };
+  systemd.timers."weekly-git-commit" = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "Sun 10:00";
+      Persistent = true;
+      Unit = "weekly-git-commit.service";
+    };
+  };
 
-    ];
+  systemd.services."download-paperpile" = {
+    script = ''
+      set -ev
+      cd /home/moritz/wiki/papers
+      ${pkgs.wget}/bin/wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb
+    '';
+    serviceConfig = {
+      Type = "oneshot";
+      User = "moritz";
+    };
+  };
+  systemd.timers."download-paperpile" = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "*:0/1";
+      Persistent = true;
+      Unit = "download-paperpile.service";
+    };
   };
 }
 #+end_src
