@@ -4852,6 +4852,9 @@ TODO 2: make sure to remount the two things if they drop out!
     description = "Smart Glass MP4 Parsing";
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
+    # unitConfig = {
+    #   StartLimitBurst = "0";  # set to 0 to avoid failure. Note 
+    # };
     serviceConfig = {
       Type = "simple";
       ExecStart = let
@@ -4884,14 +4887,27 @@ TODO 2: make sure to remount the two things if they drop out!
       Restart = "no";
     };
   };
-  systemd.paths.smart-glass-watcher = {
-    description = "Watch Smart Glasses Video Directory for New Files";
-    pathConfig = {
-      PathExistsGlob = "/home/moritz/Smart Glasses/*.mp4";
+
+  systemd.timers."smart-glass-parsing-timer" = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "10min";
+      OnUnitInactiveSec = "10min";
+      #  OnCalendar = "*:0/10";  # alternative (ever 10 mins)
       Unit = "smart-glass-parsing.service";
     };
-    wantedBy = [ "multi-user.target" ];
   };
+  # This led to unit-start-limit-hit'.
+  # systemd.paths.smart-glass-watcher = {  
+  #   description = "Watch Smart Glasses Video Directory for New Files";
+  #   pathConfig = {
+  #     PathExistsGlob = "/home/moritz/Smart Glasses/*.mp4";  # TODO better watch the directory (how cares if it is triggered for mp4s)?
+  #     Unit = "smart-glass-parsing.service";
+  #     # TriggerLimitIntervalSec= "10";  # 2 is the default
+  #     TriggerLimitBurst= "0";  # 200 is default. 0 is "no triggering"
+  #   };
+  #   wantedBy = [ "multi-user.target" ];
+  # };
 }
 #+end_src
 
