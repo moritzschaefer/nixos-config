@@ -216,7 +216,7 @@ Make this repository flake-compatible:
 #+begin_src nix
   (final: prev: {
     unstable = import inputs.nixpkgs-unstable {
-      system = prev.system;  # or prev.pkgs.system or prev.nixpkgs.pkgs.system
+      system = prev.system;
       overlays = self.overlays; # .${system};
       config = { allowUnfree = true;  allowBroken = true; nvidia.acceptLicense = true; };
     };
@@ -1465,7 +1465,7 @@ For background, see this thread: https://discourse.nixos.org/t/seeking-assistanc
 {
   services.avahi = {
     enable = true;
-   allowInterfaces = [ "wlp9s0" "tun0" ];  # TODO how to add "all"?
+   allowInterfaces = [ "wlp9s0" "wlan" "tun0" "wg0" ];  # TODO how to add "all"?
     openFirewall = true;
     publish = {
       addresses = true;
@@ -1654,7 +1654,7 @@ Enable firewall. This blocks all ports (for ingress traffic) and pings.
 {
   networking.firewall = {
     enable = true;
-    allowPing = true;  # neede for samba
+    allowPing = true;  # needed for samba
 
     connectionTrackingModules = [];
     autoLoadConntrackHelpers = false;
@@ -1757,11 +1757,15 @@ Automatic USB stick mounting
 #+end_src
 
 ** Samba
-#+name: machine-mopad
+#+name: machine-moair
 #+begin_src nix
 {
   networking.firewall.extraCommands = ''iptables -t raw -A OUTPUT -p udp -m udp --dport 137 -j CT --helper netbios-ns'';
-  services.gvfs.enable = true;
+  
+  services.gvfs = {  # https://nixos.wiki/wiki/Samba#Browsing_samba_shares_with_GVFS
+    enable = true;
+    package = lib.mkForce pkgs.gnome3.gvfs;
+  };
   services.samba = {
     enable = true;
     securityType = "user";
@@ -1802,6 +1806,26 @@ Automatic USB stick mounting
         "force group" = "users";
       };
     };
+  };
+}
+#+end_src
+
+
+TODO: this one could/should use agenix credentials
+#+name: machine-moair
+#+begin_src nix
+{
+  # docs: https://nixos.wiki/wiki/Samba#CIFS_mount_configuration
+  # could be mounted as user as well (default is root)
+  environment.systemPackages = [ pkgs.cifs-utils ];
+  fileSystems."/mnt/moxps_ssd2tb" = {
+    device = "//192.168.0.52/ssd2tb";
+    fsType = "cifs";
+    options = let
+      # this line prevents hanging on network split
+      automount_opts = "x-systemd.automount,noauto,x-systemd.idle-timeout=60,x-systemd.device-timeout=5s,x-systemd.mount-timeout=5s";
+
+    in ["${automount_opts},credentials=/etc/nixos/smb-secrets"];
   };
 }
 #+end_src
@@ -2696,7 +2720,8 @@ slock: unable to disable OOM killer. Make sure to suid or sgid slock.
     pandoc
     haskellPackages.pandoc-crossref
     # haskellPackages.pandoc-citeproc  # broken...
-    texlive.combined.scheme-full  # until 22.05, this installs an old version of ghostscript
+    texlive.combined.scheme-full
+    perl538Packages.LaTeXML
   ];
 }
 #+end_src
@@ -2777,7 +2802,7 @@ Don't require additional setup.
     obs-studio
     jmtpfs
     qbittorrent
-    unstable.blender
+    # unstable.blender
     rclone
     # teams
     # discord  # no aarch64
@@ -3336,7 +3361,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
   ];
   programs.tmux = {
     enable = true;
-    shortcut = "n";
+    shortcut = if name == "moair" then "n" else "b";
     clock24 = true;
     # aggressiveResize = true; -- Disabled to be iTerm-friendly
     baseIndex = 1;
@@ -3538,7 +3563,8 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       # json-rpc
       # service-factory
       debugpy
-      faster-whisper
+      # faster-whisper # fails on moair!
+      # private-gpt  # fails on moair!
 
       fritzconnection
       # jupyter
@@ -4715,7 +4741,6 @@ TODO 2: make sure to remount the two things if they drop out!
 #+name: machine-moxps
 #+begin_src nix
 {
-  networking.firewall.extraCommands = ''iptables -t raw -A OUTPUT -p udp -m udp --dport 137 -j CT --helper netbios-ns'';
   services.samba = {
     enable = true;
     securityType = "user";
@@ -4725,21 +4750,40 @@ TODO 2: make sure to remount the two things if they drop out!
       wins support = yes
       server string = smbnix
       netbios name = smbnix
-      security = user 
+      security = user
       #use sendfile = yes
       #max protocol = smb2
-      hosts allow = 192.168.0.1/24  localhost
+      hosts allow = 192.168.0.1/24 10.100.0.1/24 localhost
       hosts deny = 0.0.0.0/0
       guest account = nobody
       map to guest = bad user
     '';
-    #shares = {
-      #nas = {
-        #"path" = "/mnt/ssd2tb";
-        #"guest ok" = "yes";
-        #"read only" = "no";
-      #};
-    #};
+    shares = {
+      ssd2tb = {
+        "path" = "/mnt/ssd2tb";
+        "guest ok" = "yes";
+        "read only" = "no";
+        "browseable" = "yes";
+        "create mask" = "0644";
+        "directory mask" = "0755";
+        "force user" = "moritz";
+        "force group" = "users";
+      };
+      moritz = {
+        path = "/home/moritz/";
+        browseable = "yes";
+        "read only" = "no";
+        "guest ok" = "no";
+        "create mask" = "0644";
+        "directory mask" = "0755";
+        "force user" = "moritz";
+        "force group" = "users";
+      };
+    };
+  };
+  services.samba-wsdd = {
+    enable = true;
+    openFirewall = true;
   };
 }
 #+end_src
