@@ -11,7 +11,6 @@ There are still a lot of manual steps involved:
 7. get encrypted private key from secrets: https://snow-dev.com/posts/setup-pass-on-multiple-devices.html
 8. clone my passwords repo to have my pass-logins, transfer gpg-keys (https://www.hjdskes.nl/blog/pass/)
 9. clone my dotfiles and link them using homesick
-10. install home-manager!
 
 ---
 
@@ -88,7 +87,7 @@ Enable experimental Flakes support.
 Make this repository flake-compatible:
 #+begin_src nix :tangle flake.nix :noweb no-export :padline no
 {
-  description = "Moritz's NixOS/home-manager configuration";
+  description = "Moritz's NixOS";
 
   # edition = 201909;
 
@@ -129,13 +128,6 @@ Make this repository flake-compatible:
     nur = {
       url = github:nix-community/NUR;
     };
-    home-manager = {
-      type = "github";
-      owner = "nix-community";
-      repo = "home-manager";
-      ref = "release-24.05";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     agenix.url = "github:ryantm/agenix";
     apple-silicon = {
       url = "github:tpwrules/nixos-apple-silicon";
@@ -146,7 +138,7 @@ Make this repository flake-compatible:
   };
   
 # nixpkgs-local
-  outputs = { self, nixpkgs, nixpkgs-moritz, nixpkgs-unstable, nixos-hardware, home-manager, nur, agenix, apple-silicon }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-moritz, nixpkgs-unstable, nixos-hardware, nur, agenix, apple-silicon }@inputs:
     let
       system-wrapper = name: if name == "moair" then "aarch64-linux" else "x86_64-linux";
       pkgs-wrapper = name: import nixpkgs {
@@ -322,18 +314,6 @@ I'm the only user of the system:
 
 =initialPassword= is used only first time when user is created. It must be changed as soon as possible with =passwd=.
 
-** Home manager
-Home-manager is used to manage my home directory and user applications (including my python installation).
-I thought it wouldn't be required to install it (see flakes section), but it seems to be necessary anyways..
-
-#+name: nixos-section
-#+begin_src nix
-{
-  environment.systemPackages = [
-    pkgs.home-manager
-  ];
-}
-#+end_src
 ** Machines
 #+name: Machines section
 I currently have only one machine.
