@@ -1,5 +1,5 @@
 {
-  description = "Moritz's NixOS/home-manager configuration";
+  description = "Moritz's NixOS";
 
   # edition = 201909;
 
@@ -8,13 +8,7 @@
       type = "github";
       owner = "NixOS";
       repo = "nixpkgs";
-      ref = "nixos-24.05";
-    };
-    nixpkgs-2009 = {
-      type = "github";
-      owner = "NixOS";
-      repo = "nixpkgs";
-      ref = "nixos-20.09";
+      ref = "nixos-24.11";
     };
     nixpkgs-unstable = {
       type = "github";
@@ -37,22 +31,14 @@
     # nixpkgs-local = {
     #   url = "/home/moritz/Projects/nixpkgs/";
     # };
-    
+
     nixos-hardware = {
       type = "github";
       owner = "NixOS";
       repo = "nixos-hardware";
-      flake = false;
     };
     nur = {
       url = github:nix-community/NUR;
-    };
-    home-manager = {
-      type = "github";
-      owner = "nix-community";
-      repo = "home-manager";
-      ref = "release-24.05";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     agenix.url = "github:ryantm/agenix";
     apple-silicon = {
@@ -64,11 +50,11 @@
   };
   
 # nixpkgs-local
-  outputs = { self, nixpkgs, nixpkgs-moritz, nixpkgs-2009, nixpkgs-unstable, nixos-hardware, home-manager, nur, agenix, apple-silicon }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-moritz, nixpkgs-unstable, nixos-hardware, nur, agenix, apple-silicon }@inputs:
     let
-      system = "aarch64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
+      system-wrapper = name: if name == "moair" then "aarch64-linux" else "x86_64-linux";
+      pkgs-wrapper = name: import nixpkgs {
+        system = system-wrapper name;
         overlays = self.overlays;
         config = { allowUnfree = true;
                     allowBroken = true;
@@ -88,14 +74,14 @@
           hosts = ["moxps" "mobook" "mopad" "moair"];
           mkHost = name:
             nixpkgs.lib.nixosSystem {
-              system = "aarch64-linux";
+              system = system-wrapper name;
               modules = [
-                { nixpkgs = { inherit pkgs;  }; }
+                { nixpkgs = { pkgs = (pkgs-wrapper name);  }; }
                 (import ./nixos-config.nix)
                 { nixpkgs.overlays = [ nur.overlay ]; }
                 agenix.nixosModules.default
                 {
-                  environment.systemPackages = [ agenix.packages.${system}.default ];
+                  environment.systemPackages = [ agenix.packages.${system-wrapper name}.default ];
                   age.identityPaths = [ "/home/moritz/.ssh/id_ed25519_agenix" ];
                 }
               ];
@@ -103,39 +89,33 @@
             };
         in nixpkgs.lib.genAttrs hosts mkHost;
 
+      # redundant
+      packages.x86_64-linux =
+        let
+          mergePackages = nixpkgs.lib.foldr nixpkgs.lib.mergeAttrs {};
+        in
+          mergePackages [
+            
+          ];
+      # redundant
       packages.aarch64-linux =
         let
           mergePackages = nixpkgs.lib.foldr nixpkgs.lib.mergeAttrs {};
         in
           mergePackages [
-            {
-              # note it's a new attribute and does not override old one
-              input-mono = (pkgs.input-fonts.overrideAttrs (old: {
-                src = pkgs.requireFile {
-                  name = "Input-Font.zip";
-                  url = "https://input.fontbureau.com/build/?fontSelection=fourStyleFamily&regular=InputMonoNarrow-Regular&italic=InputMonoNarrow-Italic&bold=InputMonoNarrow-Bold&boldItalic=InputMonoNarrow-BoldItalic&a=0&g=0&i=topserif&l=serifs_round&zero=0&asterisk=height&braces=straight&preset=default&line-height=1.2&accept=I+do&email=";
-                  sha256 = "888bbeafe4aa6e708f5c37b42fdbab526bc1d125de5192475e7a4bb3040fc45a";
-                };
-                outputHash = "1w2i660dg04nyc6fc6r6sd3pw53h8dh8yx4iy6ccpii9gwjl9val";
-              }));
-            }
+            
           ];
 
       overlays = [
-        (_self: _super: self.packages.aarch64-linux)
+        # (_self: _super: builtins.getAttr _super.system self.packages)  # this led to "infinite recursion" but it was actually not needed (weird!)
         (final: prev: {
           unstable = import inputs.nixpkgs-unstable {
-            inherit system;
+            system = prev.system;
             overlays = self.overlays; # .${system};
-            
             config = { allowUnfree = true;  allowBroken = true; nvidia.acceptLicense = true; };
           };
-          nixpkgs-2009 = import inputs.nixpkgs-2009 {
-            inherit system;
-            overlays = self.overlays; # .${system};
-            config = { allowUnfree = true; };
-          };
           
+         
           # mkNvidiaContainerPkg = { name, containerRuntimePath, configTemplate, additionalPaths ? [] }:
           #   let
           #     nvidia-container-runtime = pkgs.callPackage "${inputs.nixpkgs}/pkgs/applications/virtualization/nvidia-container-runtime" {
@@ -474,32 +454,32 @@
                   #   maintainers = [ maintainers.moritzs ];
                   # };
                 };
-                pybedtools = _super.buildPythonPackage rec {
-                  version = "0.8.1";
-                  pname = "pybedtools";
+                # pybedtools = _super.buildPythonPackage rec {
+                #   version = "0.8.1";
+                #   pname = "pybedtools";
         
-                  src = _super.fetchPypi {
-                    inherit pname version;
-                    sha256 = "c035e078617f94720eb627e20c91f2377a7bd9158a137872a6ac88f800898593";
-                  };
+                #   src = _super.fetchPypi {
+                #     inherit pname version;
+                #     sha256 = "c035e078617f94720eb627e20c91f2377a7bd9158a137872a6ac88f800898593";
+                #   };
         
-                  checkInputs = [ _super.pytest _super.numpydoc _super.psutil _super.pyyaml _super.sphinx ];
-                  propagatedBuildInputs = [ _super.numpy _super.pandas _super.pysam _super.six pkgs.zlib pkgs.bash pkgs.bedtools ];  # Is it OK to use pkgs here?
+                #   checkInputs = [ _super.pytest _super.numpydoc _super.psutil _super.pyyaml _super.sphinx ];
+                #   propagatedBuildInputs = [ _super.numpy _super.pandas _super.pysam _super.six pkgs.zlib pkgs.bash pkgs.bedtools ];  # Is it OK to use pkgs here?
         
-                  checkPhase = ''
-                    # pytest -v --doctest-modules
-                    # ${_super.python.interpreter} -c 'import pybedtools'  # test and import do not work in checkPhase, because the built pyx file cannot be included
-                  '';
+                #   checkPhase = ''
+                #     # pytest -v --doctest-modules
+                #     # ${_super.python.interpreter} -c 'import pybedtools'  # test and import do not work in checkPhase, because the built pyx file cannot be included
+                #   '';
         
-                  # Tests require extra dependencies
-                  doCheck = false;
+                #   # Tests require extra dependencies
+                #   doCheck = false;
         
-                  # meta = with stdenv.lib; {
-                  #   homepage = "https://github.com/daler/pybedtools";
-                  #   description = "Python wrapper -- and more -- for Aaron Quinlan's BEDTools (bioinformatics tools) http://daler.github.io/pybedtools";
-                  #   license = licenses.gpl2;
-                  # };
-                };
+                #   # meta = with stdenv.lib; {
+                #   #   homepage = "https://github.com/daler/pybedtools";
+                #   #   description = "Python wrapper -- and more -- for Aaron Quinlan's BEDTools (bioinformatics tools) http://daler.github.io/pybedtools";
+                #   #   license = licenses.gpl2;
+                #   # };
+                # };
                 scikit-plot = _super.buildPythonPackage rec {
                   version = "0.3.7";
                   pname = "scikit-plot";
@@ -777,23 +757,6 @@
           } )
       ];
 
-      homeConfigurations.moritz =
-        #let
-          # hosts = ["MoritzSchaefer"];
-          # mkHost = hostname:
-            home-manager.lib.homeManagerConfiguration {
-              pkgs = nixpkgs.legacyPackages.${system};
-              # nixpkgs.config.allowUnfree = true;
-              # nixpkgs.overlays = self.overlays;
-              modules = [ ./.config/nixpkgs/home.nix {
-                home = {
-                  username = "moritz";
-                  homeDirectory = "/home/moritz";
-                  stateVersion = "18.09";
-                };
-                }
-              ];
-            };
         # in nixpkgs.lib.genAttrs hosts mkHost;
     };
 }

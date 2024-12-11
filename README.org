@@ -76,7 +76,7 @@ Enable experimental Flakes support.
 #+begin_src nix
 {
   nix = {
-    package = pkgs.nixFlakes;
+    package = pkgs.nixVersions.stable;
     extraOptions = ''
       experimental-features = nix-command flakes
     '';
@@ -96,7 +96,7 @@ Make this repository flake-compatible:
       type = "github";
       owner = "NixOS";
       repo = "nixpkgs";
-      ref = "nixos-24.05";
+      ref = "nixos-24.11";
     };
     nixpkgs-unstable = {
       type = "github";
@@ -371,7 +371,7 @@ This is my Dell XPS 15. Only use Intel OR Nvidia
   powerManagement.enable = true;
 
   # The NixOS release to be compatible with for stateful data such as databases.
-  system.stateVersion = "20.03";
+  system.stateVersion = "24.05";
 }
 #+end_src
 ***** Intel only
@@ -1064,6 +1064,7 @@ Clickpad and DPI:
 
   nixpkgs.overlays = [ inputs.apple-silicon.overlays.apple-silicon-overlay ];
 
+  boot.kernelParams = [ "apple_dcp.show_notch=1" ];
 
   # Use the systemd-boot EFI boot loader.
   boot.loader.systemd-boot.enable = true;
@@ -1100,9 +1101,15 @@ Clickpad and DPI:
   # };
 
   # Reference Asahi/Apple data path (required for flake)
-  hardware.asahi.peripheralFirmwareDirectory = /etc/nixos/firmware;
+  hardware.asahi.peripheralFirmwareDirectory = ./firmware;
   # Optionally disable their extraction
   # hardware.asahi.extractPeripheralFirmware = false;
+  # hardware.asahi = {  # TODO this might improve graphics stuff
+  #   withRust = true;
+  #   useExperimentalGPUDriver = true;
+  #   experimentalGPUInstallMode = "replace";
+  #   setupAsahiSound = true;
+  # };
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
   # (the default) this is the recommended approach. When using systemd-networkd it's
@@ -1250,7 +1257,7 @@ For background, see this thread: https://discourse.nixos.org/t/seeking-assistanc
     pkgs.sshfs
   ];
 
-  age.secrets.muwhpc.file = /home/moritz/nixos-config/secrets/muwhpc.age;
+  age.secrets.muwhpc.file = "/home/moritz/nixos-config/secrets/muwhpc.age";
   fileSystems."/mnt/muwhpc" = {
     device = "//msc-smb.hpc.meduniwien.ac.at/mschae83";
     fsType = "cifs";
@@ -1525,7 +1532,9 @@ Also, Pulseaudio is a requirement for Firefox Quantum.
   #   jack.enable = true;
   };
 
-  environment.systemPackages = with pkgs; [ pavucontrol libjack2 jack2 qjackctl jack2Full jack_capture
+  environment.systemPackages = with pkgs; [
+  pavucontrol
+  # libjack2 jack2 qjackctl jack2 jack_capture
   gst_all_1.gstreamer
   gst_all_1.gst-plugins-good
   gst_all_1.gst-plugins-base
@@ -1699,7 +1708,6 @@ Enable firewall. This blocks all ports (for ingress traffic) and pings.
   virtualisation.docker.enable = true;
   # virtualisation.docker.enableNvidia = true;  # TODO 
 
-  systemd.enableUnifiedCgroupHierarchy = false;  # workaround https://github.com/NixOS/nixpkgs/issues/127146
   # hardware.opengl.driSupport32Bit = true;
   environment.systemPackages = [
     pkgs.docker-compose
@@ -1794,26 +1802,26 @@ Automatic USB stick mounting
   
   services.gvfs = {  # https://nixos.wiki/wiki/Samba#Browsing_samba_shares_with_GVFS
     enable = true;
-    package = lib.mkForce pkgs.gnome3.gvfs;
+    package = lib.mkForce pkgs.gnome.gvfs;
   };
   services.samba = {
     enable = true;
     securityType = "user";
     openFirewall = true;
-    extraConfig = ''
-      workgroup = WORKGROUP
-      wins support = no
-      wins server = 192.168.1.10
-      server string = smbnix
-      netbios name = smbnix
-      security = user 
-      #use sendfile = yes
-      #max protocol = smb2
-      hosts allow = 192.168.  localhost
-      hosts deny = 0.0.0.0/0
-      guest account = nobody
-      map to guest = bad user
-    '';
+    settings = {
+      global = {
+        workgroup = "WORKGROUP";
+        "wins support" = "no";
+        "wins server" = "192.168.1.10";
+        "server string" = "smbnix";
+        "netbios name" = "smbnix";
+        security = "user";
+        "hosts allow" = "192.168. localhost";
+        "hosts deny" = "0.0.0.0/0";
+        "guest account" = "nobody";
+        "map to guest" = "bad user";
+      };
+    };
     shares = {
       # public = {
       #   path = "/mnt/Shares/Public";
@@ -2061,8 +2069,8 @@ Here's a basic NixOS configuration that should do what you're asking for. This c
 {
   environment.systemPackages = with pkgs; [ wget gawk gnugrep ];
 
-  age.secrets.mcUrl.file = /home/moritz/nixos-config/secrets/mcUrl.age;
-  age.secrets.gcUrl.file = /home/moritz/nixos-config/secrets/gcUrl.age;
+  age.secrets.mcUrl.file = "/home/moritz/nixos-config/secrets/mcUrl.age";
+  age.secrets.gcUrl.file = "/home/moritz/nixos-config/secrets/gcUrl.age";
   systemd.services.ics2org = let
     scriptPath = "/home/moritz/wiki/calendar-sync/ical2org.awk";
     mcIcsPath = "/home/moritz/wiki/calendar-sync/mc_office365.ics";
@@ -2184,7 +2192,6 @@ I needed to hack this to emacs29, because emacs28 failed with my org-mode config
 
         extraPackages = epkgs: with epkgs; [ emacsql-sqlite pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
         # I only managed to compile emacs-zmq once (~/emacs.d/elpa/27.1/develop/zmq-.../emacs-zmq.so). I just copied it from there to mobook
-        enableDefaultConfig = false;  # todo disable and enable loadScript
         # careful, 'loadScript option' was merged from Vizaxo into my personal nixpkgs repo.
         loadScript = ''
           (require 'exwm)
@@ -2221,7 +2228,6 @@ These packages are used by my desktop setup
 #+begin_src nix
 {
   environment.systemPackages = [
-    # pkgs.khoj
     pkgs.wmname
     pkgs.xclip
     pkgs.clipit
@@ -2840,10 +2846,10 @@ Don't require additional setup.
     arandr
     dmenu
     # # soulseekqt
-    gnome3.cheese
-    gnome3.gnome-screenshot
+    gnome.cheese
+    gnome.gnome-screenshot
     # sparkleshare_fixed 
-    gnome3.gpaste
+    gnome.gpaste
     autorandr
     libnotify
     feh
@@ -3160,7 +3166,7 @@ I use urxvt as my terminal emulator:
 #+begin_src nix
 {
   environment.systemPackages = [
-    pkgs.rxvt_unicode
+    pkgs.rxvt-unicode-unwrapped
   ];
 }
 #+end_src
@@ -3588,7 +3594,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       # matplotlib-venn
       networkx
       statsmodels
-      up-set-plot
+      # up-set-plot
       # jedi
       # json-rpc
       # service-factory
@@ -3605,7 +3611,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       # moritzsphd
       tabulate
       # swifter
-      gffutils
+      # gffutils
       # pyensembl  # fails due to serializable
       # pybedtools
       pybigwig
@@ -4620,6 +4626,8 @@ Bucket Home Assistant
 #+name: machine-moxps
 #+begin_src nix
 {
+
+  environment.systemPackages = with pkgs; [ alsa-utils ];
   virtualisation.oci-containers = {
     # backend = "podman";
     containers = {

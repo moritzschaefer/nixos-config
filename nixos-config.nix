@@ -51,7 +51,7 @@ let
         powerManagement.enable = true;
       
         # The NixOS release to be compatible with for stateful data such as databases.
-        system.stateVersion = "20.03";
+        system.stateVersion = "24.05";
       }
       {
         system.nixos.tags = [ "no-xserver-datacenter" ];
@@ -187,7 +187,7 @@ let
             internalInterfaces = [ "wg0" ];
           };
           firewall.allowedUDPPorts = [ 51820 ];
-          firewall.allowedTCPPorts = [ 51821 8384 21 5000 8086 ];  # syncthing as well, and FTP; and 5000 for vispr; and influxdb2
+          firewall.allowedTCPPorts = [ 51821 8384 21 5000 8086 42110 10700 10200 10300 ];  # syncthing as well, and FTP; and 5000 for vispr; and influxdb2; and khoj and home-assistant (wyoming)
         };
       
         services.nscd.enable = true;
@@ -228,7 +228,6 @@ let
             # Note: The private key can also be included inline via the privateKey option,
             # but this makes the private key world-readable; thus, using privateKeyFile is
             # recommended.
-            # TODO use age
             privateKeyFile = config.age.secrets.server_wireguard_private.path;
             # server public key is KYF+BBuoY7dNYswft+vhlNrAKjAkMIMYnkhBbHcH7Dw=
             peers = [
@@ -239,7 +238,7 @@ let
                 # List of IPs assigned to this peer within the tunnel subnet. Used to configure routing.
                 allowedIPs = [ "10.100.0.2/32" ];
               }
-              { # Mopad
+              { # Mopad & Moair
                 publicKey = "zdDbsCZd65as6OwRlT/PgfgDju9LwpjRhpCRIrfMhWU=";
                 # List of IPs assigned to this peer within the tunnel subnet. Used to configure routing.
                 allowedIPs = [ "10.100.0.3/32" ];
@@ -292,6 +291,8 @@ let
         };
       }
       {
+      
+        environment.systemPackages = with pkgs; [ alsa-utils ];
         virtualisation.oci-containers = {
           # backend = "podman";
           containers = {
@@ -300,7 +301,7 @@ let
               environment.TZ = "Europe/Berlin";
               ports = [ "0.0.0.0:8123:8123" ];
               hostname = "homeassistant";
-              image = "ghcr.io/home-assistant/home-assistant:stable";  # Warning: if the tag does not change, the image will not be updated
+              image = "ghcr.io/home-assistant/home-assistant:latest";  # Warning: if the tag does not change, the image will not be updated
               extraOptions = [
                 "--network=hass"
                 # "--device=/dev/ttyACM0:/dev/ttyACM0"  # Example, change this to match your own hardware
@@ -317,14 +318,14 @@ let
               ];
             };
             wyoming-whisper = {
-              image = "rhasspy/wyoming-whisper";
+              image = "rhasspy/wyoming-whisper:latest";
               ports = [ "0.0.0.0:10300:10300" ];
               extraOptions = ["--network=hass"];
               hostname = "wyoming-whisper";
               volumes = [
                 "/var/lib/wyoming-whisper:/data"
               ];
-              cmd = [ "--model" "base" ];  #  tiny-int8, timy, base-int8, base, and small-int8
+              cmd = [ "--model" "base" "--language" "en" ];  #  tiny-int8, timy, base-int8, base, and small-int8
             };
             wyoming-piper = {
               image = "rhasspy/wyoming-piper";
@@ -337,7 +338,7 @@ let
               cmd = [ "--voice" "en_US-lessac-medium" ];
             };
             openwakeword = {
-              image = "rhasspy/wyoming-openwakeword";
+              image = "rhasspy/wyoming-openwakeword:latest";
               extraOptions = ["--network=hass"];
               hostname = "openwakeword";
               volumes = [
@@ -348,24 +349,33 @@ let
               ];
               environment.TZ = "Europe/Vienna";
               cmd = [ "--preload-model" "ok_nabu"];  #  "--custom-model-dir" "/custom" 
+              ports = [ "0.0.0.0:10400:10400/udp" ];
             };
             # TODO improve by adding configs here: https://github.com/rhasspy/wyoming-satellite (e.g. audio enhancements)
-            wyoming-satellite = {
-              image = "satellite";  # TODO reference the dockerfile here /home/moritz/wyoming-satellite/Dockerfile
-              ports = [ "0.0.0.0:10700:10700" ];
-              hostname = "wyoming-satellite";
-              extraOptions = [
-                "--network=hass"
-                "--device=/dev/snd:/dev/snd"
-                "--group-add=audio"
-              ];
-              cmd = [
-                "--name" "living_room"
-                "--mic-command" "arecord -D plughw:1,0 -r 16000 -c 1 -f S16_LE -t raw"
-                "--snd-command" "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw"
-                # "--debug"
-              ];
-            };
+            # wyoming-satellite = {
+            #   image = pkgs.dockerTools.buildImage {
+            #     name = "satellite";
+            #     tag = "latest";
+            #     copyToRoot = pkgs.buildEnv {
+            #       name = "image-root";
+            #       paths = [ pkgs.bashInteractive ];
+            #       pathsToLink = [ "/bin" ];
+            #     };
+            #   };
+            #   ports = [ "0.0.0.0:10700:10700" ];
+            #   hostname = "wyoming-satellite";
+            #   extraOptions = [
+            #     "--network=hass"
+            #     "--device=/dev/snd:/dev/snd"
+            #     "--group-add=audio"
+            #   ];
+            #   cmd = [
+            #     "--name" "living_room"
+            #     "--mic-command" "arecord -D plughw:1,0 -r 16000 -c 1 -f S16_LE -t raw"
+            #     "--snd-command" "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw"
+            #     # "--debug"
+            #   ];
+            # };
           };
         };
       }
@@ -409,7 +419,6 @@ let
           }) borg-dirs;
       }
       {
-        networking.firewall.extraCommands = ''iptables -t raw -A OUTPUT -p udp -m udp --dport 137 -j CT --helper netbios-ns'';
         services.samba = {
           enable = true;
           securityType = "user";
@@ -419,21 +428,40 @@ let
             wins support = yes
             server string = smbnix
             netbios name = smbnix
-            security = user 
+            security = user
             #use sendfile = yes
             #max protocol = smb2
-            hosts allow = 192.168.0.1/24  localhost
+            hosts allow = 192.168.0.1/24 10.100.0.1/24 localhost
             hosts deny = 0.0.0.0/0
             guest account = nobody
             map to guest = bad user
           '';
-          #shares = {
-            #nas = {
-              #"path" = "/mnt/ssd2tb";
-              #"guest ok" = "yes";
-              #"read only" = "no";
-            #};
-          #};
+          shares = {
+            ssd2tb = {
+              "path" = "/mnt/ssd2tb";
+              "guest ok" = "yes";
+              "read only" = "no";
+              "browseable" = "yes";
+              "create mask" = "0644";
+              "directory mask" = "0755";
+              "force user" = "moritz";
+              "force group" = "users";
+            };
+            moritz = {
+              path = "/home/moritz/";
+              browseable = "yes";
+              "read only" = "no";
+              "guest ok" = "no";
+              "create mask" = "0644";
+              "directory mask" = "0755";
+              "force user" = "moritz";
+              "force group" = "users";
+            };
+          };
+        };
+        services.samba-wsdd = {
+          enable = true;
+          openFirewall = true;
         };
       }
       {
@@ -447,6 +475,9 @@ let
           description = "Smart Glass MP4 Parsing";
           after = [ "network.target" ];
           wantedBy = [ "multi-user.target" ];
+          # unitConfig = {
+          #   StartLimitBurst = "0";  # set to 0 to avoid failure. Note 
+          # };
           serviceConfig = {
             Type = "simple";
             ExecStart = let
@@ -479,14 +510,47 @@ let
             Restart = "no";
           };
         };
-        systemd.paths.smart-glass-watcher = {
-          description = "Watch Smart Glasses Video Directory for New Files";
-          pathConfig = {
-            PathExistsGlob = "/home/moritz/Smart Glasses/*.mp4";
+      
+        systemd.timers."smart-glass-parsing-timer" = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnBootSec = "10min";
+            OnUnitInactiveSec = "10min";
+            #  OnCalendar = "*:0/10";  # alternative (ever 10 mins)
             Unit = "smart-glass-parsing.service";
           };
-          wantedBy = [ "multi-user.target" ];
         };
+        # This led to unit-start-limit-hit'.
+        # systemd.paths.smart-glass-watcher = {  
+        #   description = "Watch Smart Glasses Video Directory for New Files";
+        #   pathConfig = {
+        #     PathExistsGlob = "/home/moritz/Smart Glasses/*.mp4";  # TODO better watch the directory (how cares if it is triggered for mp4s)?
+        #     Unit = "smart-glass-parsing.service";
+        #     # TriggerLimitIntervalSec= "10";  # 2 is the default
+        #     TriggerLimitBurst= "0";  # 200 is default. 0 is "no triggering"
+        #   };
+        #   wantedBy = [ "multi-user.target" ];
+        # };
+      }
+      {
+        # environment.systemPackages = with pkgs; [ khoj ];
+        services.postgresql = {
+          enable = true;
+          extraPlugins = ps: with ps; [ pgvector ];
+          ensureDatabases = [ "khoj" ];
+          authentication = pkgs.lib.mkOverride 10 ''
+            #type database  DBuser            auth-method
+            local all       all               trust
+            host  all       all 127.0.0.1/32  trust
+            host  all       all ::1/128       trust
+          '';
+        };
+      
+        services.ollama.enable = true;
+        services.ollama.acceleration = "cuda";
+        services.ollama.package = pkgs.unstable.ollama;  # required for llama 3.1
+      
+      
       }
     ];
     mobook = [
@@ -789,104 +853,6 @@ let
         '';
       }
       {
-        networking.firewall.extraCommands = ''iptables -t raw -A OUTPUT -p udp -m udp --dport 137 -j CT --helper netbios-ns'';
-        services.gvfs.enable = true;
-        services.samba = {
-          enable = true;
-          securityType = "user";
-          openFirewall = true;
-          extraConfig = ''
-            workgroup = WORKGROUP
-            wins support = no
-            wins server = 192.168.1.10
-            server string = smbnix
-            netbios name = smbnix
-            security = user 
-            #use sendfile = yes
-            #max protocol = smb2
-            hosts allow = 192.168.  localhost
-            hosts deny = 0.0.0.0/0
-            guest account = nobody
-            map to guest = bad user
-          '';
-          shares = {
-            # public = {
-            #   path = "/mnt/Shares/Public";
-            #   browseable = "yes";
-            #   "read only" = "no";
-            #   "guest ok" = "yes";
-            #   "create mask" = "0644";
-            #   "directory mask" = "0755";
-            #   "force user" = "username";
-            #   "force group" = "groupname";
-            # };
-            moritz = {
-              path = "/home/moritz/";
-              browseable = "yes";
-              "read only" = "no";
-              "guest ok" = "no";
-              "create mask" = "0644";
-              "directory mask" = "0755";
-              "force user" = "moritz";
-              "force group" = "users";
-            };
-          };
-        };
-      }
-      {
-        # Enable cron service
-        services.cron = {
-          enable = true;
-          systemCronJobs = [
-            # Add new files to wiki
-            "0 10 * * 0      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/; ${pkgs.git}/bin/git add .; ${pkgs.git}/bin/git commit -m \"Weekly checkpoint\"' >> /tmp/git_out 2>&1"
-            # Download paperpile citations (once a day)
-            "0 * * * *      moritz    ${pkgs.bash}/bin/bash -c '. /etc/profile; cd /home/moritz/wiki/papers; wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb' >> download_paperpile_log 2>&1"
-            
-          ];
-        };
-      }
-      # TODO also the awk script is for google calendar, maybe I should try to find an office365-specific script.
-      # TODO I modified that script such that it does not adjust the time zone (because it was broken: the ical file indicates the wrong timezone but the correct time!). ( return 0 in parse_timezone_offset
-      # TODO also, filter either ical or org for events older than last month (otherwise org-agenda has to work so much more...)
-      # TODO note: I disabled syncthing wiki syncing o the `calendar-sync` folder (ignore/exception)
-      {
-        environment.systemPackages = with pkgs; [ wget gawk gnugrep ];
-      
-        age.secrets.mcUrl.file = /home/moritz/nixos-config/secrets/mcUrl.age;
-        age.secrets.gcUrl.file = /home/moritz/nixos-config/secrets/gcUrl.age;
-        systemd.services.ics2org = let
-          scriptPath = "/home/moritz/wiki/calendar-sync/ical2org.awk";
-          mcIcsPath = "/home/moritz/wiki/calendar-sync/mc_office365.ics";
-          gcIcsPath = "/home/moritz/wiki/calendar-sync/gc_office365.ics";
-          orgPath = "/home/moritz/wiki/calendar-sync/calendars.org";
-          # mcUrlFile = config.age.secrets.mcUrl.path;
-          # gcUrlFile = config.age.secrets.gcUrl.path;
-           in {
-          description = "Convert .ics to .org";
-          wantedBy = [ "multi-user.target" ];
-          serviceConfig = {
-            Type = "oneshot";
-          };
-          script = ''
-            # not redownloading the script, because the time-zone adaptation is broken (see TODO above)
-            # ${pkgs.wget}/bin/wget https://raw.githubusercontent.com/msherry/ical2org/master/ical2org.awk -O ${scriptPath}
-            ${pkgs.wget}/bin/wget `cat ${config.age.secrets.mcUrl.path}` -O ${mcIcsPath}
-            ${pkgs.wget}/bin/wget `cat ${config.age.secrets.gcUrl.path}` -O ${gcIcsPath}
-            ${pkgs.gawk}/bin/gawk -f ${scriptPath} ${mcIcsPath} | ${pkgs.gnugrep}/bin/grep -v 'CLOCK:' > ${orgPath}
-            ${pkgs.gawk}/bin/gawk -f ${scriptPath} ${gcIcsPath} | ${pkgs.gnugrep}/bin/grep -v 'CLOCK:' >> ${orgPath}
-          '';
-        };
-      
-        systemd.timers.ics2org = {
-          description = "Run ics2org every 5 minutes";
-          wantedBy = [ "timers.target" ];
-          timerConfig = {
-            OnUnitActiveSec = "5m";
-          };
-        };
-      }
-      {
         systemd.services.fix-enter-iso3 = {
           script = ''
             /run/current-system/sw/bin/setkeycodes 0x1c 58  # enter 
@@ -931,6 +897,7 @@ let
       
         nixpkgs.overlays = [ inputs.apple-silicon.overlays.apple-silicon-overlay ];
       
+        boot.kernelParams = [ "apple_dcp.show_notch=1" ];
       
         # Use the systemd-boot EFI boot loader.
         boot.loader.systemd-boot.enable = true;
@@ -967,9 +934,15 @@ let
         # };
       
         # Reference Asahi/Apple data path (required for flake)
-        hardware.asahi.peripheralFirmwareDirectory = /etc/nixos/firmware;
+        hardware.asahi.peripheralFirmwareDirectory = ./firmware;
         # Optionally disable their extraction
         # hardware.asahi.extractPeripheralFirmware = false;
+        # hardware.asahi = {  # TODO this might improve graphics stuff
+        #   withRust = true;
+        #   useExperimentalGPUDriver = true;
+        #   experimentalGPUInstallMode = "replace";
+        #   setupAsahiSound = true;
+        # };
       
         # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
         # (the default) this is the recommended approach. When using systemd-networkd it's
@@ -1021,10 +994,193 @@ let
         '';
       }
       {
-        services.udev.extraRules = ''
-          KERNEL=="macsmc-battery", SUBSYSTEM=="power_supply", ATTR{charge_control_end_threshold}="95"
-        '';
-        # , ATTR{charge_control_start_threshold}="70" only charge below 70 <- nope :)
+        networking.firewall = {
+          allowedUDPPorts = [ 51820 ]; # Clients and peers can use the same port, see listenport
+        };
+      
+        age.secrets.client_wireguard_private.file = "/home/moritz/nixos-config/secrets/wireguard_client_private_key.age";
+        # Enable WireGuard
+        networking.wireguard.enable = true;
+        networking.wireguard.interfaces = {
+          # "wg0" is the network interface name. You can name the interface arbitrarily.
+          wg0 = {
+            # Determines the IP address and subnet of the client's end of the tunnel interface.
+            ips = [ "10.100.0.3/24" ];
+            listenPort = 51820; # to match firewall allowedUDPPorts (without this wg uses random port numbers)
+      
+            # Path to the private key file.
+            #
+            # Note: The private key can also be included inline via the privateKey option,
+            # but this makes the private key world-readable; thus, using privateKeyFile is
+            # recommended.
+            privateKeyFile = config.age.secrets.client_wireguard_private.path;
+      
+            peers = [
+              # For this client configuration, one peer entry for the server will suffice.
+              {
+                # Public key of the server (not a file path).
+                publicKey = "KYF+BBuoY7dNYswft+vhlNrAKjAkMIMYnkhBbHcH7Dw=";
+      
+                # Forward all the traffic via VPN.
+                # allowedIPs = [ "0.0.0.0/0" ];
+                # Or forward only particular subnets
+                allowedIPs = [ "10.100.0.1" "192.168.0.0/24" ];
+      
+                # Set this to the server IP and port.
+                endpoint = "moritzs.duckdns.org:51820";
+      
+                # Send keepalives every 25 seconds. Important to keep NAT tables alive.
+                persistentKeepalive = 25;
+              }
+            ];
+          };
+        };
+      }
+      {
+        networking.firewall.extraCommands = ''iptables -t raw -A OUTPUT -p udp -m udp --dport 137 -j CT --helper netbios-ns'';
+        
+        services.gvfs = {  # https://nixos.wiki/wiki/Samba#Browsing_samba_shares_with_GVFS
+          enable = true;
+          package = lib.mkForce pkgs.gnome.gvfs;
+        };
+        services.samba = {
+          enable = true;
+          securityType = "user";
+          openFirewall = true;
+          settings = {
+            global = {
+              workgroup = "WORKGROUP";
+              "wins support" = "no";
+              "wins server" = "192.168.1.10";
+              "server string" = "smbnix";
+              "netbios name" = "smbnix";
+              security = "user";
+              "hosts allow" = "192.168. localhost";
+              "hosts deny" = "0.0.0.0/0";
+              "guest account" = "nobody";
+              "map to guest" = "bad user";
+            };
+          };
+          shares = {
+            # public = {
+            #   path = "/mnt/Shares/Public";
+            #   browseable = "yes";
+            #   "read only" = "no";
+            #   "guest ok" = "yes";
+            #   "create mask" = "0644";
+            #   "directory mask" = "0755";
+            #   "force user" = "username";
+            #   "force group" = "groupname";
+            # };
+            moritz = {
+              path = "/home/moritz/";
+              browseable = "yes";
+              "read only" = "no";
+              "guest ok" = "no";
+              "create mask" = "0644";
+              "directory mask" = "0755";
+              "force user" = "moritz";
+              "force group" = "users";
+            };
+          };
+        };
+      }
+      {
+        # docs: https://nixos.wiki/wiki/Samba#CIFS_mount_configuration
+        # could be mounted as user as well (default is root)
+        environment.systemPackages = [ pkgs.cifs-utils ];
+        fileSystems."/mnt/moxps_ssd2tb" = {
+          device = "//192.168.0.52/ssd2tb";
+          fsType = "cifs";
+          options = let
+            # this line prevents hanging on network split
+            automount_opts = "x-systemd.automount,noauto,x-systemd.idle-timeout=60,x-systemd.device-timeout=5s,x-systemd.mount-timeout=5s";
+      
+          in ["${automount_opts},credentials=/etc/nixos/smb-secrets"];
+        };
+      }
+      {
+        systemd.services."weekly-git-commit" = {
+          script = ''
+            set -ev
+            cd /home/moritz/wiki/
+            export PATH=$PATH:${pkgs.git-lfs}/bin
+            ${pkgs.git}/bin/git add .
+            ${pkgs.git}/bin/git commit -m "Weekly checkpoint"
+          '';
+          serviceConfig = {
+            Type = "oneshot";
+            User = "moritz";
+          };
+        };
+        systemd.timers."weekly-git-commit" = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = "Sun 10:00";
+            Persistent = true;
+            Unit = "weekly-git-commit.service";
+          };
+        };
+      
+        systemd.services."download-paperpile" = {
+          script = ''
+            set -ev
+            cd /home/moritz/wiki/papers
+            ${pkgs.wget}/bin/wget --content-disposition -N https://paperpile.com/eb/ghEynTRTJb
+          '';
+          serviceConfig = {
+            Type = "oneshot";
+            User = "moritz";
+          };
+        };
+        systemd.timers."download-paperpile" = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = "*:0/1";
+            Persistent = true;
+            Unit = "download-paperpile.service";
+          };
+        };
+      }
+      # TODO also the awk script is for google calendar, maybe I should try to find an office365-specific script.
+      # TODO I modified that script such that it does not adjust the time zone (because it was broken: the ical file indicates the wrong timezone but the correct time!). ( return 0 in parse_timezone_offset
+      # TODO also, filter either ical or org for events older than last month (otherwise org-agenda has to work so much more...)
+      # TODO note: I disabled syncthing wiki syncing o the `calendar-sync` folder (ignore/exception)
+      {
+        environment.systemPackages = with pkgs; [ wget gawk gnugrep ];
+      
+        age.secrets.mcUrl.file = "/home/moritz/nixos-config/secrets/mcUrl.age";
+        age.secrets.gcUrl.file = "/home/moritz/nixos-config/secrets/gcUrl.age";
+        systemd.services.ics2org = let
+          scriptPath = "/home/moritz/wiki/calendar-sync/ical2org.awk";
+          mcIcsPath = "/home/moritz/wiki/calendar-sync/mc_office365.ics";
+          gcIcsPath = "/home/moritz/wiki/calendar-sync/gc_office365.ics";
+          orgPath = "/home/moritz/wiki/calendar-sync/calendars.org";
+          # mcUrlFile = config.age.secrets.mcUrl.path;
+          # gcUrlFile = config.age.secrets.gcUrl.path;
+           in {
+          description = "Convert .ics to .org";
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+          };
+          script = ''
+            # not redownloading the script, because the time-zone adaptation is broken (see TODO above)
+            # ${pkgs.wget}/bin/wget https://raw.githubusercontent.com/msherry/ical2org/master/ical2org.awk -O ${scriptPath}
+            ${pkgs.wget}/bin/wget `cat ${config.age.secrets.mcUrl.path}` -O ${mcIcsPath}
+            ${pkgs.wget}/bin/wget `cat ${config.age.secrets.gcUrl.path}` -O ${gcIcsPath}
+            ${pkgs.gawk}/bin/gawk -f ${scriptPath} ${mcIcsPath} | ${pkgs.gnugrep}/bin/grep -v 'CLOCK:' > ${orgPath}
+            ${pkgs.gawk}/bin/gawk -f ${scriptPath} ${gcIcsPath} | ${pkgs.gnugrep}/bin/grep -v 'CLOCK:' >> ${orgPath}
+          '';
+        };
+      
+        systemd.timers.ics2org = {
+          description = "Run ics2org every 5 minutes";
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnUnitActiveSec = "5m";
+          };
+        };
       }
       {
         services.xserver.xkb.options= "lv5:rwin_switch_lock,terminate:ctrl_alt_bksp";
@@ -1051,7 +1207,7 @@ in
 
     {
       nix = {
-        package = pkgs.nixFlakes;
+        package = pkgs.nixVersions.stable;
         extraOptions = ''
           experimental-features = nix-command flakes
         '';
@@ -1087,11 +1243,6 @@ in
       };
     }
     {
-      environment.systemPackages = [
-        pkgs.home-manager
-      ];
-    }
-    {
       hardware.bluetooth.enable = true;
       hardware.bluetooth.powerOnBoot = false;
       services.blueman.enable = true;
@@ -1108,7 +1259,7 @@ in
         pkgs.sshfs
       ];
     
-      age.secrets.muwhpc.file = /home/moritz/nixos-config/secrets/muwhpc.age;
+      age.secrets.muwhpc.file = "/home/moritz/nixos-config/secrets/muwhpc.age";
       fileSystems."/mnt/muwhpc" = {
         device = "//msc-smb.hpc.meduniwien.ac.at/mschae83";
         fsType = "cifs";
@@ -1217,7 +1368,7 @@ in
     {
       services.avahi = {
         enable = true;
-       allowInterfaces = [ "wlp9s0" "tun0" ];  # TODO how to add "all"?
+       allowInterfaces = [ "wlp9s0" "wlan" "tun0" "wg0" ];  # TODO how to add "all"?
         openFirewall = true;
         publish = {
           addresses = true;
@@ -1240,7 +1391,9 @@ in
       #   jack.enable = true;
       };
     
-      environment.systemPackages = with pkgs; [ pavucontrol libjack2 jack2 qjackctl jack2Full jack_capture
+      environment.systemPackages = with pkgs; [
+      pavucontrol
+      # libjack2 jack2 qjackctl jack2 jack_capture
       gst_all_1.gstreamer
       gst_all_1.gst-plugins-good
       gst_all_1.gst-plugins-base
@@ -1331,7 +1484,7 @@ in
     {
       networking.firewall = {
         enable = true;
-        allowPing = true;  # neede for samba
+        allowPing = true;  # needed for samba
     
         connectionTrackingModules = [];
         autoLoadConntrackHelpers = false;
@@ -1342,7 +1495,6 @@ in
       virtualisation.docker.enable = true;
       # virtualisation.docker.enableNvidia = true;  # TODO 
     
-      systemd.enableUnifiedCgroupHierarchy = false;  # workaround https://github.com/NixOS/nixpkgs/issues/127146
       # hardware.opengl.driSupport32Bit = true;
       environment.systemPackages = [
         pkgs.docker-compose
@@ -1436,7 +1588,6 @@ in
     
             extraPackages = epkgs: with epkgs; [ emacsql-sqlite pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
             # I only managed to compile emacs-zmq once (~/emacs.d/elpa/27.1/develop/zmq-.../emacs-zmq.so). I just copied it from there to mobook
-            enableDefaultConfig = false;  # todo disable and enable loadScript
             # careful, 'loadScript option' was merged from Vizaxo into my personal nixpkgs repo.
             loadScript = ''
               (require 'exwm)
@@ -1468,7 +1619,6 @@ in
     }
     {
       environment.systemPackages = [
-        # pkgs.khoj
         pkgs.wmname
         pkgs.xclip
         pkgs.clipit
@@ -1676,10 +1826,11 @@ in
       environment.systemPackages = with pkgs; [
         #haskellPackages.pandoc
         # jabref
-        nixpkgs-2009.pandoc
-        nixpkgs-2009.haskellPackages.pandoc-crossref  # broken...
-        nixpkgs-2009.haskellPackages.pandoc-citeproc  # broken...
-        texlive.combined.scheme-full  # until 22.05, this installs an old version of ghostscript
+        pandoc
+        haskellPackages.pandoc-crossref
+        # haskellPackages.pandoc-citeproc  # broken...
+        texlive.combined.scheme-full
+        perl538Packages.LaTeXML
       ];
     }
     {
@@ -1725,7 +1876,7 @@ in
         obs-studio
         jmtpfs
         qbittorrent
-        unstable.blender
+        # unstable.blender
         rclone
         # teams
         # discord  # no aarch64
@@ -1733,10 +1884,10 @@ in
         arandr
         dmenu
         # # soulseekqt
-        gnome3.cheese
-        gnome3.gnome-screenshot
+        gnome.cheese
+        gnome.gnome-screenshot
         # sparkleshare_fixed 
-        gnome3.gpaste
+        gnome.gpaste
         autorandr
         libnotify
         feh
@@ -1870,7 +2021,7 @@ in
                     channels:
                       - conda-forge
                       - bioconda
-                      - defaults
+                      - nodefaults
                     dependencies:
                       - conda
                       - python=3.12
@@ -1968,7 +2119,7 @@ in
     }
     {
       environment.systemPackages = [
-        pkgs.rxvt_unicode
+        pkgs.rxvt-unicode-unwrapped
       ];
     }
     {
@@ -2008,7 +2159,7 @@ in
       ];
       programs.tmux = {
         enable = true;
-        shortcut = "n";
+        shortcut = if name == "moair" then "n" else "b";
         clock24 = true;
         # aggressiveResize = true; -- Disabled to be iTerm-friendly
         baseIndex = 1;
@@ -2184,12 +2335,13 @@ in
           # matplotlib-venn
           networkx
           statsmodels
-          up-set-plot
+          # up-set-plot
           # jedi
           # json-rpc
           # service-factory
           debugpy
-          faster-whisper
+          # faster-whisper # fails on moair!
+          # private-gpt  # fails on moair!
     
           fritzconnection
           # jupyter
@@ -2200,7 +2352,7 @@ in
           # moritzsphd
           tabulate
           # swifter
-          gffutils
+          # gffutils
           # pyensembl  # fails due to serializable
           # pybedtools
           pybigwig
@@ -2249,6 +2401,8 @@ in
         clang-tools
         automake
         autoconf-archive
+        libtool
+        zeromq
       ];
     }
     {
