@@ -42,10 +42,13 @@
     };
     agenix.url = "github:ryantm/agenix";
     apple-silicon = {
-      url = "github:tpwrules/nixos-apple-silicon";
-
+      type = "github";
+      owner = "tpwrules";
+      repo = "nixos-apple-silicon";
+      # url = "github:tpwrules/nixos-apple-silicon";
       # this line prevents fetching two versions of nixpkgs:
       inputs.nixpkgs.follows = "nixpkgs";
+      ref = "releasep2-2024-12-25";  # https://github.com/tpwrules/nixos-apple-silicon
     };
   };
   

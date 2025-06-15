@@ -546,11 +546,9 @@ let
           '';
         };
       
-        services.ollama.enable = true;
+        services.ollama.enable = false;
         services.ollama.acceleration = "cuda";
         services.ollama.package = pkgs.unstable.ollama;  # required for llama 3.1
-      
-      
       }
     ];
     mobook = [
@@ -969,6 +967,8 @@ let
             lightdm.enable = true;
           };
         };
+      
+        # services.xserver.synaptics.enable = true;
         services.libinput = {
           enable = true;
           touchpad.accelSpeed = "0.7";
@@ -992,6 +992,12 @@ let
         services.xserver.displayManager.sessionCommands = ''
           xsetroot -cursor_name left_ptr
         '';
+      }
+      {
+        services.udev.extraRules = ''
+          KERNEL=="macsmc-battery", SUBSYSTEM=="power_supply", ATTR{charge_control_end_threshold}="95"
+        '';
+        # , ATTR{charge_control_start_threshold}="70" only charge below 70 <- nope :)
       }
       {
         networking.firewall = {
@@ -1045,7 +1051,6 @@ let
         };
         services.samba = {
           enable = true;
-          securityType = "user";
           openFirewall = true;
           settings = {
             global = {
@@ -1061,7 +1066,7 @@ let
               "map to guest" = "bad user";
             };
           };
-          shares = {
+          settings = {
             # public = {
             #   path = "/mnt/Shares/Public";
             #   browseable = "yes";
@@ -1072,6 +1077,7 @@ let
             #   "force user" = "username";
             #   "force group" = "groupname";
             # };
+            # global.security = "user";
             moritz = {
               path = "/home/moritz/";
               browseable = "yes";
@@ -1393,6 +1399,7 @@ in
     
       environment.systemPackages = with pkgs; [
       pavucontrol
+      pulsemixer
       # libjack2 jack2 qjackctl jack2 jack_capture
       gst_all_1.gstreamer
       gst_all_1.gst-plugins-good
@@ -1884,10 +1891,10 @@ in
         arandr
         dmenu
         # # soulseekqt
-        gnome.cheese
-        gnome.gnome-screenshot
+        cheese
+        gnome-screenshot
         # sparkleshare_fixed 
-        gnome.gpaste
+        gpaste
         autorandr
         libnotify
         feh
@@ -1934,6 +1941,9 @@ in
       };
     }
     {
+      services.languagetool.enable = true;
+    }
+    {
       environment.systemPackages = [ pkgs.niv ];
     }
     {
@@ -1948,6 +1958,7 @@ in
         pkgs.vim_configurable # .override { python3 = true; })
         pkgs.neovim
       ];
+      
     }
     {
       environment.systemPackages = [
@@ -2098,8 +2109,12 @@ in
         '';
         mamba_shell_cmd = pkgs.writeScript "mamba_environment" ''
           #!${pkgs.stdenv.shell}
-          micromamba activate base
-          $argv
+          set env_name $argv[1]
+          set --erase argv[1]
+          echo $env_name
+          echo $argv
+          micromamba activate $env_name
+          eval $argv
         '';
         kernel_wrapper = pkgs.writeShellScriptBin "mamba_kernel" ''
           /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_kernel_commands}
@@ -2111,7 +2126,8 @@ in
           /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "python" "$@"
         '';  # TODO mamba-shell should be provided via a nix variable
         cmd_wrapper = pkgs.writeShellScriptBin "mamba_cmd" ''
-          /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "$@"
+          echo $CONDA_ENV
+          /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "''${CONDA_ENV:-base}" "$@"
         ''; # TODO mamba-shell should be provided via a nix variable
       in [
         pkgs.mamba kernel_wrapper repl_wrapper cmd_wrapper mamba_wrapper
@@ -2371,6 +2387,7 @@ in
           absl-py
           hjson
           pygments
+          jupytext
           # ptvsd
           ])); in with pkgs.python3Packages; [
         python  # let is stronger than with, which is why this installs the correct python (the one defined above)
@@ -2380,6 +2397,7 @@ in
         pkgs.pyright
         python-lsp-server
         selenium
+        jupytext  # for code-cells (python ipynb stuff)
         # pkgs.zlib
         #pkgs.zlib.dev
         # nur-no-pkgs.repos.moritzschaefer.python3Packages.cytoflow
