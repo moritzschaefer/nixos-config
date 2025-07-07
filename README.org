@@ -96,7 +96,7 @@ Make this repository flake-compatible:
       type = "github";
       owner = "NixOS";
       repo = "nixpkgs";
-      ref = "nixos-24.11";
+      ref = "nixos-25.05";
     };
     nixpkgs-unstable = {
       type = "github";
@@ -130,10 +130,13 @@ Make this repository flake-compatible:
     };
     agenix.url = "github:ryantm/agenix";
     apple-silicon = {
-      url = "github:tpwrules/nixos-apple-silicon";
-
+      type = "github";
+      owner = "tpwrules";
+      repo = "nixos-apple-silicon";
+      # url = "github:tpwrules/nixos-apple-silicon";
       # this line prevents fetching two versions of nixpkgs:
       inputs.nixpkgs.follows = "nixpkgs";
+      ref = "releasep2-2024-12-25";  # https://github.com/tpwrules/nixos-apple-silicon
     };
   };
   
@@ -166,7 +169,7 @@ Make this repository flake-compatible:
               modules = [
                 { nixpkgs = { pkgs = (pkgs-wrapper name);  }; }
                 (import ./nixos-config.nix)
-                { nixpkgs.overlays = [ nur.overlay ]; }
+                { nixpkgs.overlays = [ nur.overlays.default ]; }
                 agenix.nixosModules.default
                 {
                   environment.systemPackages = [ agenix.packages.${system-wrapper name}.default ];
@@ -295,7 +298,7 @@ Make this repository flake-compatible:
 nix.nixPath = [
     "nixpkgs=${inputs.nixpkgs}"
   ];
-}
+  }
 #+end_src
 ** Users
 I'm the only user of the system:
@@ -1136,6 +1139,8 @@ Clickpad and DPI:
       lightdm.enable = true;
     };
   };
+
+  # services.xserver.synaptics.enable = true;
   services.libinput = {
     enable = true;
     touchpad.accelSpeed = "0.7";
@@ -1170,7 +1175,7 @@ Cursor
 
 related: https://discourse.nixos.org/t/how-to-fix-cursor-size/2938
 
-#+name: machine-moair
+#+name: machine-moair-unused-becasue broken
 #+begin_src nix
 {
   services.xserver.displayManager.lightdm.greeters.gtk.cursorTheme = {
@@ -1189,6 +1194,7 @@ related: https://discourse.nixos.org/t/how-to-fix-cursor-size/2938
 
 Battery limitation (to save battery live)
 
+# unused for debugging, because it's stuck at 80
 #+name: machine-moair
 #+begin_src nix
 {
@@ -1268,11 +1274,33 @@ For background, see this thread: https://discourse.nixos.org/t/seeking-assistanc
       "x-systemd.automount"
       "noauto"
       "uid=1000"
-      "x-systemd.idle-timeout=60"
+      "x-systemd.idle-timeout=20"
       "x-systemd.device-timeout=5s"
       "x-systemd.mount-timeout=5s"
     ];
   };
+
+  # TODO this won't really work, but whatever
+  # environment.variables.SSH_AUTH_SOCK = "/run/user/1000/ssh-agent";
+  # fileSystems."/mnt/oak" = {
+  #   device = "moritzs@dtn.oak.stanford.edu:/oak/stanford/groups/zinaida";
+  #   fsType = "sshfs";
+  #   options = [
+  #     "nodev"
+  #     "noatime"
+  #     "allow_other"
+  #     "reconnect"
+  #     "ServerAliveInterval=15"
+  #     "x-systemd.automount"
+  #     "x-systemd.idle-timeout=20"
+  #     "x-systemd.device-timeout=10s"
+  #     "x-systemd.mount-timeout=10s"
+  #     "cache=no"
+  #     "nolocalcaches"
+  #     "volname=oak-sshfs"
+  #     "defer_permissions"
+  #   ];
+  # };
   # mount command fails unfortunately. Use Thunar instead
   # age.secrets.cemm.file = /home/moritz/nixos-config/secrets/cemm.age;
   # fileSystems."/mnt/cemm" = {
@@ -1303,6 +1331,33 @@ For background, see this thread: https://discourse.nixos.org/t/seeking-assistanc
       "noserverino"
       "nodev"
       "noexec"
+*** Stanford
+#+name: nixos-section-unused  does not work (and cannot work because of 2FA
+#+begin_src nix
+{
+  environment.systemPackages = [ pkgs.rclone ];
+  environment.etc."stanford-oak-mnt.conf".text = ''
+    [stanford_oak]
+    type = sftp
+    host = dtn.oak.stanford.edu
+    user = moritzs
+    key_file = /home/moritz/.ssh/id_rsa
+  '';
+
+  fileSystems."/mnt/oak" = {
+    device = "myremote:/my_data";
+    fsType = "rclone";
+    options = [
+      "nodev"
+      "nofail"
+      "allow_other"
+      "args2env"
+      "config=/etc/rclone-mnt.conf"
+    ];
+  };
+}
+#+end_src
+
 *** rclone
 #+name: machine-mopad
 #+begin_src nix
@@ -1447,7 +1502,7 @@ For background, see this thread: https://discourse.nixos.org/t/seeking-assistanc
 
 Wireguard: (note: mopad was configured via NetworkManager)
 
-#+name: machine-moair
+#+name: machine-moair-unused
 #+begin_src nix
 {
   networking.firewall = {
@@ -1534,6 +1589,7 @@ Also, Pulseaudio is a requirement for Firefox Quantum.
 
   environment.systemPackages = with pkgs; [
   pavucontrol
+  pulsemixer
   # libjack2 jack2 qjackctl jack2 jack_capture
   gst_all_1.gstreamer
   gst_all_1.gst-plugins-good
@@ -1605,10 +1661,7 @@ Update [[https://linux.die.net/man/1/locate][locate]] database daily.
 #+name: nixos-section
 #+begin_src nix
 {
-  services.locate = {
-    enable = true;
-    localuser = "moritz";
-  };
+  services.locate.enable = true;
 }
 #+end_src
 ** SSH
@@ -1806,7 +1859,6 @@ Automatic USB stick mounting
   };
   services.samba = {
     enable = true;
-    securityType = "user";
     openFirewall = true;
     settings = {
       global = {
@@ -1822,7 +1874,7 @@ Automatic USB stick mounting
         "map to guest" = "bad user";
       };
     };
-    shares = {
+    settings = {
       # public = {
       #   path = "/mnt/Shares/Public";
       #   browseable = "yes";
@@ -1833,6 +1885,7 @@ Automatic USB stick mounting
       #   "force user" = "username";
       #   "force group" = "groupname";
       # };
+      # global.security = "user";
       moritz = {
         path = "/home/moritz/";
         browseable = "yes";
@@ -2060,7 +2113,7 @@ gpg_path=gpg2
 ** MS office365 calendar
 Here's a basic NixOS configuration that should do what you're asking for. This configuration assumes that you have =wget= and =gawk= installed on your system. If not, you should add them to your =environment.systemPackages=.
 
-#+name: machine-mopad
+#+name: machine-moair
 #+begin_src nix
 # TODO also the awk script is for google calendar, maybe I should try to find an office365-specific script.
 # TODO I modified that script such that it does not adjust the time zone (because it was broken: the ical file indicates the wrong timezone but the correct time!). ( return 0 in parse_timezone_offset
@@ -2120,7 +2173,7 @@ Setup timezone:
 #+name: nixos-section
 #+begin_src nix
 {
-  time.timeZone = "Europe/Berlin";
+  time.timeZone = "America/Los_Angeles";
 }
 #+end_src
 
@@ -2190,7 +2243,7 @@ I needed to hack this to emacs29, because emacs28 failed with my org-mode config
       exwm = {
         enable = true;
 
-        extraPackages = epkgs: with epkgs; [ emacsql-sqlite pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
+        extraPackages = epkgs: with epkgs; [ pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
         # I only managed to compile emacs-zmq once (~/emacs.d/elpa/27.1/develop/zmq-.../emacs-zmq.so). I just copied it from there to mobook
         # careful, 'loadScript option' was merged from Vizaxo into my personal nixpkgs repo.
         loadScript = ''
@@ -2211,7 +2264,7 @@ I needed to hack this to emacs29, because emacs28 failed with my org-mode config
     };
     desktopManager = {
       xterm.enable = false;
-      plasma5.enable = true;
+      plasma5.enable = false;  # TODO failed the last time I tried
       xfce = {
         enable = true;
         noDesktop= true;
@@ -2564,8 +2617,6 @@ I don't use full KDE but some apps are definitely nice.
 #+begin_src nix
 {
   environment.systemPackages = [
-    pkgs.gwenview
-    pkgs.filelight
     pkgs.shared-mime-info
   ];
 }
@@ -2724,7 +2775,7 @@ slock: unable to disable OOM killer. Make sure to suid or sgid slock.
   environment.systemPackages = [ pkgs.steam-run pkgs.steam ];
   hardware.opengl.driSupport32Bit = true;
   hardware.opengl.extraPackages32 = with pkgs.pkgsi686Linux; [ libva vaapiIntel];
-  hardware.pulseaudio.support32Bit = true;
+  services.pulseaudio.support32Bit = true;
   programs.steam.package = pkgs.steam.override {
     extraLibraries = pkgs: (with config.hardware.opengl;
       if pkgs.hostPlatform.is64bit
@@ -2741,8 +2792,8 @@ slock: unable to disable OOM killer. Make sure to suid or sgid slock.
 {
   environment.systemPackages = [ pkgs.steam pkgs.steam-run ];
   hardware.opengl.driSupport32Bit = true;
-  hardware.opengl.extraPackages32 = with pkgs.pkgsi686Linux; [ libva vaapiIntel];
-  hardware.pulseaudio.support32Bit = true;
+  services.opengl.extraPackages32 = with pkgs.pkgsi686Linux; [ libva vaapiIntel];
+  services.pulseaudio.support32Bit = true;
 }
 #+end_src
 ** Latex
@@ -2846,10 +2897,10 @@ Don't require additional setup.
     arandr
     dmenu
     # # soulseekqt
-    gnome.cheese
-    gnome.gnome-screenshot
+    cheese
+    gnome-screenshot
     # sparkleshare_fixed 
-    gnome.gpaste
+    gpaste
     autorandr
     libnotify
     feh
@@ -2863,7 +2914,7 @@ Don't require additional setup.
     libreoffice
     # wineWowPackages.stable
     # # winetricks  # requires p7zip (which is unsafe...)
-    # gimp-with-plugins  # TODO 
+    # gimp-with-plugins
 
     mplayer
     mpv
@@ -2906,6 +2957,14 @@ CLOSED: [2021-07-14 Wed 12:52]
 }
 #+end_src
 
+** Writing
+#+name: nixos-section
+#+begin_src nix
+{
+  services.languagetool.enable = true;
+}
+#+end_src
+
 * Development
 ** Nix 
 #+name: nixos-section
@@ -2924,10 +2983,10 @@ CLOSED: [2021-07-14 Wed 12:52]
 #+end_src
 
 ** Flatpak
-#+name: nixos-section
+#+name: nixos-section-unused  # error   `you must enable XDG Desktop Portals with xdg.portal.enable.`
 #+begin_src nix
 {
-services.flatpak.enable = true;
+  services.flatpak.enable = true;
 }
 #+end_src
 ** Editors
@@ -2940,6 +2999,7 @@ I'm a seasoned Vim user, but I've switched to emacs.
     pkgs.vim_configurable # .override { python3 = true; })
     pkgs.neovim
   ];
+  
 }
 #+end_src
 
@@ -3017,7 +3077,7 @@ Start emacs as a daemon:
 #+begin_src nix
 {
   environment.systemPackages = with pkgs; [
-    (pkgs.buildFHSUserEnv {
+    (pkgs.buildFHSEnv {
       name = "micromamba-fhs";
 
       targetPkgs = pkgs: [
@@ -3545,7 +3605,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
 #+begin_src nix
 {
   environment.systemPackages =
-    let python = (with pkgs; python3.withPackages (python-packages: with python-packages;
+    let python = (with pkgs; pkgs.python3.withPackages (python-packages: with python-packages;
       let opencvGtk = opencv4.override (old : { enableGtk2 = true; enableGStreamer = true; });
           eaf-deps = [
             # pyqt5 sip
@@ -3576,14 +3636,13 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       in eaf-deps ++ [
       # gseapy
       pymol
-      umap-learn
+      # umap-learn
       icecream
       plotly
       pytorch
       # ignite
       # pytorch-lightning
       # pytorch-geometric
-      python3
       black
       pandas
       XlsxWriter
@@ -3619,7 +3678,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       # jupyter
       # jupyter_core
       powerline
-      adjust-text
+      # adjust-text
       # up-set-plot
       # moritzsphd
       tabulate
@@ -3638,11 +3697,12 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
       # scikit-bio
       powerline
       python-lsp-server
-      smogn
+      # smogn
       docker
       absl-py
       hjson
       pygments
+      jupytext
       # ptvsd
       ])); in with pkgs.python3Packages; [
     python  # let is stronger than with, which is why this installs the correct python (the one defined above)
@@ -3652,6 +3712,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
     pkgs.pyright
     python-lsp-server
     selenium
+    jupytext  # for code-cells (python ipynb stuff)
     # pkgs.zlib
     #pkgs.zlib.dev
     # nur-no-pkgs.repos.moritzschaefer.python3Packages.cytoflow
@@ -3661,7 +3722,7 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
 }
 #+end_src
 *** Package overlay
-#+name: flake-overlays
+#+name: flake-overlays-unused
 #+begin_src nix
 ( let
     myOverride = rec {
@@ -4250,11 +4311,8 @@ Adapted from https://github.com/srid/nixos-config/blob/master/home/tmux.nix
     # all python versions, besides editing python-packages.nix
     python2 = _super.python2.override myOverride;
     python3 = _super.python3.override myOverride;
-    python38 = _super.python38.override myOverride;
     python2Packages = python2.pkgs;
     python3Packages = python3.pkgs;
-    # python37Packages = python37.pkgs;
-    python38Packages = python38.pkgs;
   } )
 #+end_src
 ** Clojure
@@ -4441,7 +4499,7 @@ This install a number of default man pages for the linux/posix system.
     ];
 }
 #+end_src
-* Homeserver
+* Homeserver :DEPRECATED:
 ** Networking
 #+name: machine-moxps
 #+begin_src nix
@@ -4459,7 +4517,7 @@ This install a number of default man pages for the linux/posix system.
       internalInterfaces = [ "wg0" ];
     };
     firewall.allowedUDPPorts = [ 51820 ];
-    firewall.allowedTCPPorts = [ 51821 8384 21 5000 8086 ];  # syncthing as well, and FTP; and 5000 for vispr; and influxdb2
+    firewall.allowedTCPPorts = [ 51821 8384 21 5000 8086 42110 10700 10200 10300 ];  # syncthing as well, and FTP; and 5000 for vispr; and influxdb2; and khoj and home-assistant (wyoming)
   };
 
   services.nscd.enable = true;
@@ -4649,7 +4707,7 @@ Bucket Home Assistant
         environment.TZ = "Europe/Berlin";
         ports = [ "0.0.0.0:8123:8123" ];
         hostname = "homeassistant";
-        image = "ghcr.io/home-assistant/home-assistant:stable";  # Warning: if the tag does not change, the image will not be updated
+        image = "ghcr.io/home-assistant/home-assistant:latest";  # Warning: if the tag does not change, the image will not be updated
         extraOptions = [
           "--network=hass"
           # "--device=/dev/ttyACM0:/dev/ttyACM0"  # Example, change this to match your own hardware
@@ -4666,14 +4724,14 @@ Bucket Home Assistant
         ];
       };
       wyoming-whisper = {
-        image = "rhasspy/wyoming-whisper";
+        image = "rhasspy/wyoming-whisper:latest";
         ports = [ "0.0.0.0:10300:10300" ];
         extraOptions = ["--network=hass"];
         hostname = "wyoming-whisper";
         volumes = [
           "/var/lib/wyoming-whisper:/data"
         ];
-        cmd = [ "--model" "base" ];  #  tiny-int8, timy, base-int8, base, and small-int8
+        cmd = [ "--model" "base" "--language" "en" ];  #  tiny-int8, timy, base-int8, base, and small-int8
       };
       wyoming-piper = {
         image = "rhasspy/wyoming-piper";
@@ -4686,7 +4744,7 @@ Bucket Home Assistant
         cmd = [ "--voice" "en_US-lessac-medium" ];
       };
       openwakeword = {
-        image = "rhasspy/wyoming-openwakeword";
+        image = "rhasspy/wyoming-openwakeword:latest";
         extraOptions = ["--network=hass"];
         hostname = "openwakeword";
         volumes = [
@@ -4697,24 +4755,33 @@ Bucket Home Assistant
         ];
         environment.TZ = "Europe/Vienna";
         cmd = [ "--preload-model" "ok_nabu"];  #  "--custom-model-dir" "/custom" 
+        ports = [ "0.0.0.0:10400:10400/udp" ];
       };
       # TODO improve by adding configs here: https://github.com/rhasspy/wyoming-satellite (e.g. audio enhancements)
-      wyoming-satellite = {
-        image = "satellite";  # TODO reference the dockerfile here /home/moritz/wyoming-satellite/Dockerfile
-        ports = [ "0.0.0.0:10700:10700" ];
-        hostname = "wyoming-satellite";
-        extraOptions = [
-          "--network=hass"
-          "--device=/dev/snd:/dev/snd"
-          "--group-add=audio"
-        ];
-        cmd = [
-          "--name" "living_room"
-          "--mic-command" "arecord -D plughw:1,0 -r 16000 -c 1 -f S16_LE -t raw"
-          "--snd-command" "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw"
-          # "--debug"
-        ];
-      };
+      # wyoming-satellite = {
+      #   image = pkgs.dockerTools.buildImage {
+      #     name = "satellite";
+      #     tag = "latest";
+      #     copyToRoot = pkgs.buildEnv {
+      #       name = "image-root";
+      #       paths = [ pkgs.bashInteractive ];
+      #       pathsToLink = [ "/bin" ];
+      #     };
+      #   };
+      #   ports = [ "0.0.0.0:10700:10700" ];
+      #   hostname = "wyoming-satellite";
+      #   extraOptions = [
+      #     "--network=hass"
+      #     "--device=/dev/snd:/dev/snd"
+      #     "--group-add=audio"
+      #   ];
+      #   cmd = [
+      #     "--name" "living_room"
+      #     "--mic-command" "arecord -D plughw:1,0 -r 16000 -c 1 -f S16_LE -t raw"
+      #     "--snd-command" "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw"
+      #     # "--debug"
+      #   ];
+      # };
     };
   };
 }
@@ -4925,4 +4992,207 @@ within /home/moritz/Projects/cellwhisperer/hosting/home/docker-compose.yml
 
 #+end_src
 
+** LLM stuff
+#+name: flake-overlays-broken-delete
+#+begin_src nix
+(final: prev: {
+  khoj = prev.python3.pkgs.buildPythonApplication rec {
+    pname = "khoj";
+    version = "1.0.1";
+    pyproject = true;
 
+    src = prev.fetchFromGitHub {
+      owner = "debanjum";
+      repo = "khoj";
+      rev = "refs/tags/${version}";
+      hash = "sha256-lvOeYTrvW5MfhuJ3lj9n9TRlvpRwVP2vFeaEeJdqIec=";
+    };
+
+    env = {
+      DJANGO_SETTINGS_MODULE = "khoj.app.settings";
+      postgresqlEnableTCP = 1;
+    };
+
+    nativeBuildInputs = with prev.python3.pkgs; [
+      hatch-vcs
+      hatchling
+    ];
+
+    propagatedBuildInputs = with prev.python3.pkgs; [
+      aiohttp
+      anyio
+      authlib
+      beautifulsoup4
+      dateparser
+      defusedxml
+      django
+      fastapi
+      google-auth
+      # gpt4all
+      gunicorn
+      httpx
+      itsdangerous
+      jinja2
+      langchain
+      lxml
+      openai
+      openai-whisper
+      pgvector
+      pillow
+      psycopg2
+      pydantic
+      pymupdf
+      python-multipart
+      pyyaml
+      # rapidocr-onnxruntime
+      requests
+      rich
+      schedule
+      sentence-transformers
+      stripe
+      tenacity
+      tiktoken
+      torch
+      transformers
+      tzdata
+      uvicorn
+    ];
+
+    nativeCheckInputs = with prev.python3.pkgs; [
+      freezegun
+      factory-boy
+      pytest-xdist
+      trio
+      psutil
+      pytest-django
+      pytestCheckHook
+    ] ++ [
+      (postgresql.withPackages (p: with p; [ pgvector ]))
+      postgresqlTestHook
+    ];
+
+    preCheck = ''
+      export HOME=$(mktemp -d)
+    '';
+
+    pythonImportsCheck = [
+      "khoj"
+    ];
+
+    disabledTests = [
+      # Tests require network access
+      "test_different_user_data_not_accessed"
+      "test_get_api_config_types"
+      "test_get_configured_types_via_api"
+      "test_image_metadata"
+      "test_image_search"
+      "test_image_search_by_filepath"
+      "test_image_search_query_truncated"
+      "test_index_update"
+      "test_index_update_with_no_auth_key"
+      "test_notes_search"
+      "test_notes_search_with_exclude_filter"
+      "test_notes_search_with_include_filter"
+      "test_parse_html_plaintext_file"
+      "test_regenerate_index_with_new_entry"
+      "test_regenerate_with_github_fails_without_pat"
+      "test_regenerate_with_invalid_content_type"
+      "test_regenerate_with_valid_content_type"
+      "test_search_for_user2_returns_empty"
+      "test_search_with_invalid_auth_key"
+      "test_search_with_invalid_content_type"
+      "test_search_with_no_auth_key"
+      "test_search_with_valid_content_type"
+      "test_text_index_same_if_content_unchanged"
+      "test_text_indexer_deletes_embedding_before_regenerate"
+      "test_text_search"
+      "test_text_search_setup_batch_processes"
+      "test_update_with_invalid_content_type"
+      "test_user_no_data_returns_empty"
+
+      # Tests require rapidocr-onnxruntime
+      "test_multi_page_pdf_to_jsonl"
+      "test_single_page_pdf_to_jsonl"
+      "test_ocr_page_pdf_to_jsonl"
+    ];
+
+    disabledTestPaths = [
+      # Tests require network access
+      "tests/test_conversation_utils.py"
+    ];
+
+    meta = with prev.lib; {
+      description = "Natural Language Search Assistant for your Org-Mode and Markdown notes, Beancount transactions and Photos";
+      homepage = "https://github.com/debanjum/khoj";
+      changelog = "https://github.com/debanjum/khoj/releases/tag/${version}";
+      license = prev.licenses.agpl3Plus;
+      maintainers = with prev.maintainers; [ dit7ya ];
+      broken = true; # last successful build 2024-01-10
+    };
+  };
+})
+#+end_src
+
+#+name: machine-moxps
+#+begin_src nix
+{
+  # environment.systemPackages = with pkgs; [ khoj ];
+  services.postgresql = {
+    enable = true;
+    extraPlugins = ps: with ps; [ pgvector ];
+    ensureDatabases = [ "khoj" ];
+    authentication = pkgs.lib.mkOverride 10 ''
+      #type database  DBuser            auth-method
+      local all       all               trust
+      host  all       all 127.0.0.1/32  trust
+      host  all       all ::1/128       trust
+    '';
+  };
+
+  services.ollama.enable = false;
+  services.ollama.acceleration = "cuda";
+  services.ollama.package = pkgs.unstable.ollama;  # required for llama 3.1
+}
+#+end_src
+
+#+name: machine-moxps-unused
+#+begin_src nix
+{
+  services.private-gpt.enable = false;
+  # services.private-gpt.package = pkgs.unstable.private-gpt;  # TODO this requires updating unstable (nix flake update), after some stuff on GH got fixed
+  services.private-gpt.settings = {
+    azopenai = { };
+    data = {
+      local_data_folder = "/var/lib/private-gpt";
+      local_ingestion.enabled = true;
+    };
+    embedding = {
+      mode = "ollama";
+    };
+    llm = {
+      mode = "ollama";
+      tokenizer = "";
+    };
+    ollama = {
+      api_base = "http://localhost:11434";
+      embedding_api_base = "http://localhost:11434";
+      embedding_model = "nomic-embed-text";
+      keep_alive = "5m";
+      llm_model = "llama3.1";
+      repeat_last_n = 64;
+      repeat_penalty = 1.2;
+      request_timeout = 120;
+      tfs_z = 1;
+      top_k = 40;
+      top_p = 0.9;
+    };
+    openai = { };
+    qdrant = {
+      path = "/var/lib/private-gpt/vectorstore/qdrant";
+    };
+    vectorstore = {
+      database = "qdrant";
+    };
+  };
+}
+#+end_src

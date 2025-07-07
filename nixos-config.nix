@@ -546,11 +546,9 @@ let
           '';
         };
       
-        services.ollama.enable = true;
+        services.ollama.enable = false;
         services.ollama.acceleration = "cuda";
         services.ollama.package = pkgs.unstable.ollama;  # required for llama 3.1
-      
-      
       }
     ];
     mobook = [
@@ -874,7 +872,7 @@ let
         environment.systemPackages = [ pkgs.steam-run pkgs.steam ];
         hardware.opengl.driSupport32Bit = true;
         hardware.opengl.extraPackages32 = with pkgs.pkgsi686Linux; [ libva vaapiIntel];
-        hardware.pulseaudio.support32Bit = true;
+        services.pulseaudio.support32Bit = true;
         programs.steam.package = pkgs.steam.override {
           extraLibraries = pkgs: (with config.hardware.opengl;
             if pkgs.hostPlatform.is64bit
@@ -969,6 +967,8 @@ let
             lightdm.enable = true;
           };
         };
+      
+        # services.xserver.synaptics.enable = true;
         services.libinput = {
           enable = true;
           touchpad.accelSpeed = "0.7";
@@ -994,47 +994,10 @@ let
         '';
       }
       {
-        networking.firewall = {
-          allowedUDPPorts = [ 51820 ]; # Clients and peers can use the same port, see listenport
-        };
-      
-        age.secrets.client_wireguard_private.file = "/home/moritz/nixos-config/secrets/wireguard_client_private_key.age";
-        # Enable WireGuard
-        networking.wireguard.enable = true;
-        networking.wireguard.interfaces = {
-          # "wg0" is the network interface name. You can name the interface arbitrarily.
-          wg0 = {
-            # Determines the IP address and subnet of the client's end of the tunnel interface.
-            ips = [ "10.100.0.3/24" ];
-            listenPort = 51820; # to match firewall allowedUDPPorts (without this wg uses random port numbers)
-      
-            # Path to the private key file.
-            #
-            # Note: The private key can also be included inline via the privateKey option,
-            # but this makes the private key world-readable; thus, using privateKeyFile is
-            # recommended.
-            privateKeyFile = config.age.secrets.client_wireguard_private.path;
-      
-            peers = [
-              # For this client configuration, one peer entry for the server will suffice.
-              {
-                # Public key of the server (not a file path).
-                publicKey = "KYF+BBuoY7dNYswft+vhlNrAKjAkMIMYnkhBbHcH7Dw=";
-      
-                # Forward all the traffic via VPN.
-                # allowedIPs = [ "0.0.0.0/0" ];
-                # Or forward only particular subnets
-                allowedIPs = [ "10.100.0.1" "192.168.0.0/24" ];
-      
-                # Set this to the server IP and port.
-                endpoint = "moritzs.duckdns.org:51820";
-      
-                # Send keepalives every 25 seconds. Important to keep NAT tables alive.
-                persistentKeepalive = 25;
-              }
-            ];
-          };
-        };
+        services.udev.extraRules = ''
+          KERNEL=="macsmc-battery", SUBSYSTEM=="power_supply", ATTR{charge_control_end_threshold}="95"
+        '';
+        # , ATTR{charge_control_start_threshold}="70" only charge below 70 <- nope :)
       }
       {
         networking.firewall.extraCommands = ''iptables -t raw -A OUTPUT -p udp -m udp --dport 137 -j CT --helper netbios-ns'';
@@ -1045,7 +1008,6 @@ let
         };
         services.samba = {
           enable = true;
-          securityType = "user";
           openFirewall = true;
           settings = {
             global = {
@@ -1061,7 +1023,7 @@ let
               "map to guest" = "bad user";
             };
           };
-          shares = {
+          settings = {
             # public = {
             #   path = "/mnt/Shares/Public";
             #   browseable = "yes";
@@ -1072,6 +1034,7 @@ let
             #   "force user" = "username";
             #   "force group" = "groupname";
             # };
+            # global.security = "user";
             moritz = {
               path = "/home/moritz/";
               browseable = "yes";
@@ -1233,7 +1196,7 @@ in
     nix.nixPath = [
         "nixpkgs=${inputs.nixpkgs}"
       ];
-    }
+      }
     {
       users.users.moritz = {
         isNormalUser = true;
@@ -1270,11 +1233,33 @@ in
           "x-systemd.automount"
           "noauto"
           "uid=1000"
-          "x-systemd.idle-timeout=60"
+          "x-systemd.idle-timeout=20"
           "x-systemd.device-timeout=5s"
           "x-systemd.mount-timeout=5s"
         ];
       };
+    
+      # TODO this won't really work, but whatever
+      # environment.variables.SSH_AUTH_SOCK = "/run/user/1000/ssh-agent";
+      # fileSystems."/mnt/oak" = {
+      #   device = "moritzs@dtn.oak.stanford.edu:/oak/stanford/groups/zinaida";
+      #   fsType = "sshfs";
+      #   options = [
+      #     "nodev"
+      #     "noatime"
+      #     "allow_other"
+      #     "reconnect"
+      #     "ServerAliveInterval=15"
+      #     "x-systemd.automount"
+      #     "x-systemd.idle-timeout=20"
+      #     "x-systemd.device-timeout=10s"
+      #     "x-systemd.mount-timeout=10s"
+      #     "cache=no"
+      #     "nolocalcaches"
+      #     "volname=oak-sshfs"
+      #     "defer_permissions"
+      #   ];
+      # };
       # mount command fails unfortunately. Use Thunar instead
       # age.secrets.cemm.file = /home/moritz/nixos-config/secrets/cemm.age;
       # fileSystems."/mnt/cemm" = {
@@ -1393,6 +1378,7 @@ in
     
       environment.systemPackages = with pkgs; [
       pavucontrol
+      pulsemixer
       # libjack2 jack2 qjackctl jack2 jack_capture
       gst_all_1.gstreamer
       gst_all_1.gst-plugins-good
@@ -1442,10 +1428,7 @@ in
       ];
     }
     {
-      services.locate = {
-        enable = true;
-        localuser = "moritz";
-      };
+      services.locate.enable = true;
     }
     {
       services.dnsmasq = {
@@ -1563,7 +1546,7 @@ in
       i18n.supportedLocales = [ "en_US.UTF-8/UTF-8" ];
     }
     {
-      time.timeZone = "Europe/Berlin";
+      time.timeZone = "America/Los_Angeles";
     }
     {
       security.sudo.extraConfig = ''
@@ -1586,7 +1569,7 @@ in
           exwm = {
             enable = true;
     
-            extraPackages = epkgs: with epkgs; [ emacsql-sqlite pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
+            extraPackages = epkgs: with epkgs; [ pkgs.imagemagick pkgs.escrotum epkgs.vterm ];  # unfortunately, adding zmq and jupyter here, didn't work so I had to install them manually (i.e. compiling emacs-zmq)
             # I only managed to compile emacs-zmq once (~/emacs.d/elpa/27.1/develop/zmq-.../emacs-zmq.so). I just copied it from there to mobook
             # careful, 'loadScript option' was merged from Vizaxo into my personal nixpkgs repo.
             loadScript = ''
@@ -1607,7 +1590,7 @@ in
         };
         desktopManager = {
           xterm.enable = false;
-          plasma5.enable = true;
+          plasma5.enable = false;  # TODO failed the last time I tried
           xfce = {
             enable = true;
             noDesktop= true;
@@ -1754,8 +1737,6 @@ in
     }
     {
       environment.systemPackages = [
-        pkgs.gwenview
-        pkgs.filelight
         pkgs.shared-mime-info
       ];
     }
@@ -1884,10 +1865,10 @@ in
         arandr
         dmenu
         # # soulseekqt
-        gnome.cheese
-        gnome.gnome-screenshot
+        cheese
+        gnome-screenshot
         # sparkleshare_fixed 
-        gnome.gpaste
+        gpaste
         autorandr
         libnotify
         feh
@@ -1901,7 +1882,7 @@ in
         libreoffice
         # wineWowPackages.stable
         # # winetricks  # requires p7zip (which is unsafe...)
-        # gimp-with-plugins  # TODO 
+        # gimp-with-plugins
     
         mplayer
         mpv
@@ -1934,13 +1915,13 @@ in
       };
     }
     {
+      services.languagetool.enable = true;
+    }
+    {
       environment.systemPackages = [ pkgs.niv ];
     }
     {
       environment.systemPackages = [ pkgs.hugo ];
-    }
-    {
-    services.flatpak.enable = true;
     }
     {
       environment.variables.EDITOR = "vim";
@@ -1948,6 +1929,7 @@ in
         pkgs.vim_configurable # .override { python3 = true; })
         pkgs.neovim
       ];
+      
     }
     {
       environment.systemPackages = [
@@ -1985,11 +1967,12 @@ in
     }
     {
       environment.systemPackages = with pkgs; [
-        (pkgs.buildFHSUserEnv {
+        (pkgs.buildFHSEnv {
           name = "micromamba-fhs";
     
           targetPkgs = pkgs: [
             pkgs.micromamba
+            pkgs.libgcc
             # Add other packages if needed
             (pkgs.stdenv.mkDerivation {  # for fish conda initialization
                 name = "conda-config-files";
@@ -2101,6 +2084,13 @@ in
           micromamba activate base
           $argv
         '';
+        mamba_shell_cmd2 = pkgs.writeScript "mamba_environment2" ''
+          #!${pkgs.stdenv.shell}
+          set env_name $argv[1]
+          set --erase argv[1]
+          fish -C "micromamba activate $env_name"
+          $argv
+        '';
         kernel_wrapper = pkgs.writeShellScriptBin "mamba_kernel" ''
           /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_kernel_commands}
         '';  # TODO mamba-shell should be provided via a nix variable
@@ -2111,10 +2101,15 @@ in
           /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "python" "$@"
         '';  # TODO mamba-shell should be provided via a nix variable
         cmd_wrapper = pkgs.writeShellScriptBin "mamba_cmd" ''
+          echo $CONDA_ENV
           /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "$@"
         ''; # TODO mamba-shell should be provided via a nix variable
+        cmd_wrapper2 = pkgs.writeShellScriptBin "mamba_cmd2" ''
+          echo $CONDA_ENV
+          /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd2} "''${CONDA_ENV:-base}" "$@"
+        ''; # TODO mamba-shell should be provided via a nix variable
       in [
-        pkgs.mamba kernel_wrapper repl_wrapper cmd_wrapper mamba_wrapper
+        pkgs.micromamba pkgs.mamba kernel_wrapper repl_wrapper cmd_wrapper cmd_wrapper2 mamba_wrapper
       ];
     }
     {
@@ -2273,7 +2268,7 @@ in
     }
     {
       environment.systemPackages =
-        let python = (with pkgs; python3.withPackages (python-packages: with python-packages;
+        let python = (with pkgs; pkgs.python3.withPackages (python-packages: with python-packages;
           let opencvGtk = opencv4.override (old : { enableGtk2 = true; enableGStreamer = true; });
               eaf-deps = [
                 # pyqt5 sip
@@ -2304,14 +2299,13 @@ in
           in eaf-deps ++ [
           # gseapy
           pymol
-          umap-learn
+          # umap-learn
           icecream
           plotly
           pytorch
           # ignite
           # pytorch-lightning
           # pytorch-geometric
-          python3
           black
           pandas
           XlsxWriter
@@ -2347,7 +2341,7 @@ in
           # jupyter
           # jupyter_core
           powerline
-          adjust-text
+          # adjust-text
           # up-set-plot
           # moritzsphd
           tabulate
@@ -2366,11 +2360,12 @@ in
           # scikit-bio
           powerline
           python-lsp-server
-          smogn
+          # smogn
           docker
           absl-py
           hjson
           pygments
+          jupytext
           # ptvsd
           ])); in with pkgs.python3Packages; [
         python  # let is stronger than with, which is why this installs the correct python (the one defined above)
@@ -2380,6 +2375,7 @@ in
         pkgs.pyright
         python-lsp-server
         selenium
+        jupytext  # for code-cells (python ipynb stuff)
         # pkgs.zlib
         #pkgs.zlib.dev
         # nur-no-pkgs.repos.moritzschaefer.python3Packages.cytoflow
