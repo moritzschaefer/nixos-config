@@ -3022,6 +3022,7 @@ Start emacs as a daemon:
 
       targetPkgs = pkgs: [
         pkgs.micromamba
+        pkgs.libgcc
         # Add other packages if needed
         (pkgs.stdenv.mkDerivation {  # for fish conda initialization
             name = "conda-config-files";
@@ -3137,6 +3138,13 @@ Start emacs as a daemon:
       micromamba activate base
       $argv
     '';
+    mamba_shell_cmd2 = pkgs.writeScript "mamba_environment2" ''
+      #!${pkgs.stdenv.shell}
+      set env_name $argv[1]
+      set --erase argv[1]
+      fish -C "micromamba activate $env_name"
+      $argv
+    '';
     kernel_wrapper = pkgs.writeShellScriptBin "mamba_kernel" ''
       /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_kernel_commands}
     '';  # TODO mamba-shell should be provided via a nix variable
@@ -3147,10 +3155,15 @@ Start emacs as a daemon:
       /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "python" "$@"
     '';  # TODO mamba-shell should be provided via a nix variable
     cmd_wrapper = pkgs.writeShellScriptBin "mamba_cmd" ''
+      echo $CONDA_ENV
       /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd} "$@"
     ''; # TODO mamba-shell should be provided via a nix variable
+    cmd_wrapper2 = pkgs.writeShellScriptBin "mamba_cmd2" ''
+      echo $CONDA_ENV
+      /run/current-system/sw/bin/micromamba-fhs ${mamba_shell_cmd2} "''${CONDA_ENV:-base}" "$@"
+    ''; # TODO mamba-shell should be provided via a nix variable
   in [
-    pkgs.mamba kernel_wrapper repl_wrapper cmd_wrapper mamba_wrapper
+    pkgs.micromamba pkgs.mamba kernel_wrapper repl_wrapper cmd_wrapper cmd_wrapper2 mamba_wrapper
   ];
 }
 #+end_src
